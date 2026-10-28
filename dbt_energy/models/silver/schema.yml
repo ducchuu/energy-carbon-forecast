@@ -1,0 +1,42 @@
+version: 2
+
+models:
+  - name: stg_generation_actuals
+    description: "Deduplicated and hour-truncated generation actuals"
+    columns:
+      - name: timestamp_utc
+        tests:
+          - not_null
+  - name: stg_day_ahead_prices
+    description: "Deduplicated and hour-truncated day-ahead prices"
+    columns:
+      - name: timestamp_utc
+        tests:
+          - not_null
+  - name: stg_grid_forecasts
+    description: "Deduplicated and hour-truncated grid forecasts"
+    columns:
+      - name: timestamp_utc
+        tests:
+          - not_null
+  - name: stg_tennet_imbalance
+    description: "Deduplicated and hour-aggregated TenneT settlement imbalance telemetry"
+    columns:
+      - name: timestamp_utc
+        tests:
+          - not_null
+      - name: bidding_zone
+        tests:
+          - not_null
+  - name: stg_tennet_congestion
+    description: "Deduplicated and hour-aggregated TenneT substation congestion restrictions"
+    columns:
+      - name: timestamp_utc
+        tests:
+          - not_null
+      - name: bidding_zone
+        tests:
+          - not_null
+      - name: substation_area
+        tests:
+          - not_null

@@ -1,0 +1,38 @@
+[project]
+name = "energy-carbon-pipeline"
+version = "1.0.0"
+description = "Serverless European Power Grid Energy Price & Carbon Dispatch Optimization Platform"
+requires-python = ">=3.10"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+exclude = [
+    ".git",
+    ".venv",
+    "__pycache__",
+    "dbt_energy/target",
+    "dbt_energy/dbt_packages",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "C4",  # flake8-comprehensions
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+]
+ignore = [
+    "E501",  # line length handled by formatter
+    "B008",  # do not perform function calls in argument defaults
+    "E712",  # comparison to True/False with == (needed for pandas Series masks)
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
+

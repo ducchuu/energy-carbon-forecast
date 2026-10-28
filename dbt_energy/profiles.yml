@@ -1,0 +1,21 @@
+energy_pipeline:
+  target: "{{ env_var('DBT_TARGET', 'dev') }}"
+  outputs:
+    dev:
+      type: bigquery
+      method: oauth
+      project: "{{ env_var('GCP_PROJECT_ID', 'energy-carbon') }}"
+      dataset: "{{ env_var('BQ_DATASET_GOLD', 'energy_gold_dev') }}"
+      threads: 4
+      timeout_seconds: 300
+      location: EU
+      priority: interactive
+    prod:
+      type: bigquery
+      method: oauth
+      project: "{{ env_var('GCP_PROJECT_ID', 'energy-carbon') }}"
+      dataset: "{{ env_var('BQ_DATASET_GOLD', 'energy_gold_prod') }}"
+      threads: 4
+      timeout_seconds: 300
+      location: EU
+      priority: interactive

@@ -1,0 +1,6 @@
+functions-framework
+entsoe-py
+pandas
+google-cloud-bigquery
+pyarrow
+requests

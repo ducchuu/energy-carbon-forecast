@@ -1,0 +1,58 @@
+name: 'energy_pipeline'
+version: '1.0.0'
+config-version: 2
+
+profile: 'energy_pipeline'
+
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+target-path: "target"
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+models:
+  energy_pipeline:
+    gold:
+      +materialized: incremental
+      +incremental_strategy: merge
+      +schema: gold
+    intermediate:
+      +materialized: table
+      +schema: silver
+    silver:
+      +materialized: view
+      +schema: silver
+
+seeds:
+  energy_pipeline:
+    +schema: gold
+    default_asset_constraints:
+      +column_types:
+        asset_id: string
+        facility_name: string
+        bidding_zone: string
+        substation_area: string
+        solar_kwp: float64
+        grid_export_limit_kw: float64
+        bess_capacity_kwh: float64
+        bess_max_charge_kw: float64
+        bess_max_discharge_kw: float64
+        bess_roundtrip_efficiency: float64
+        bess_min_soc_pct: float64
+        bess_max_soc_pct: float64
+        baseline_load_kw: float64
+        max_flexible_load_kw: float64
+        thermal_shift_buffer_hours: int64
+        alpha_weight: float64
+        updated_at: timestamp
+    emission_factors:
+      +column_types:
+        psr_type: string
+        emission_factor_gco2_kwh: float64
+        is_renewable: boolean

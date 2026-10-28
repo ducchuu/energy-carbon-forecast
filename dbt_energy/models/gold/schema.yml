@@ -1,0 +1,68 @@
+version: 2
+
+models:
+  - name: fct_hourly_grid_metrics
+    description: "Gold model for hourly energy metrics integrating prices, generation, carbon forecasts, and TenneT congestion/imbalance."
+    columns:
+      - name: timestamp_utc
+        description: "Start of the hourly interval in UTC"
+        tests:
+          - not_null
+      - name: bidding_zone
+        description: "EIC zone code"
+        tests:
+          - not_null
+      - name: carbon_intensity_gco2_kwh
+        description: "Carbon intensity in grams of CO2 equivalent per kWh"
+        tests:
+          - not_null
+
+  - name: dim_asset_constraints
+    description: "Commercial facility physical asset parameters (Solar PV, Grid Export Limits, BESS capacity/power/efficiency, and shiftable industrial load)."
+    columns:
+      - name: asset_id
+        description: "Unique facility asset identifier"
+        tests:
+          - not_null
+          - unique
+      - name: bidding_zone
+        description: "EIC zone code"
+        tests:
+          - not_null
+      - name: bess_capacity_kwh
+        description: "Usable battery energy storage capacity in kWh"
+        tests:
+          - not_null
+
+  - name: fct_asset_dispatch_schedule
+    description: "Hourly commercial asset dispatch schedule with BESS arbitrage, solar curtailment, and flexible load ramp flags."
+    columns:
+      - name: timestamp_utc
+        description: "Start of the hourly interval in UTC"
+        tests:
+          - not_null
+      - name: asset_id
+        description: "Facility asset identifier"
+        tests:
+          - not_null
+      - name: dispatch_action
+        description: "Primary recommended dispatch instruction for the hour"
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - 'CHARGE_BATTERY'
+                  - 'DISCHARGE_BATTERY'
+                  - 'CURTAIL_SOLAR'
+                  - 'RAMP_LOAD'
+                  - 'HOLD_BASELINE'
+      - name: flag_charge_battery
+        tests:
+          - not_null
+      - name: flag_curtail_solar
+        tests:
+          - not_null
+      - name: flag_ramp_load
+        tests:
+          - not_null

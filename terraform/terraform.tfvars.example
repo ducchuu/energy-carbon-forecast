@@ -1,0 +1,8 @@
+project_id      = "your-gcp-project-id"
+region          = "europe-west4"
+environment     = "dev"
+billing_account = "000000-000000-000000"
+alert_email     = "alerts@example.com"
+dashboard_authorized_members = [
+  "group:facility-operators@example.com"
+]

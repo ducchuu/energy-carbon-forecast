@@ -1,0 +1,5 @@
+asset_id,facility_name,bidding_zone,substation_area,solar_kwp,grid_export_limit_kw,bess_capacity_kwh,bess_max_charge_kw,bess_max_discharge_kw,bess_roundtrip_efficiency,bess_min_soc_pct,bess_max_soc_pct,baseline_load_kw,max_flexible_load_kw,thermal_shift_buffer_hours,alpha_weight,updated_at
+NL-AMS-DC01,Amsterdam Cold Storage & Logistics Hub,10YNL----------L,NL-RANDSTAD-NORTH,1200.0,600.0,2000.0,500.0,500.0,0.90,10.0,95.0,350.0,450.0,4,0.50,2026-01-01T00:00:00Z
+NL-RTM-IND02,Rotterdam Port Electrolyzer & Chemical Facility,10YNL----------L,NL-RANDSTAD-SOUTH,2500.0,1000.0,4000.0,1000.0,1000.0,0.88,15.0,95.0,800.0,1200.0,6,0.65,2026-01-01T00:00:00Z
+DE-LU-MFG01,Rhine-Ruhr Precision Manufacturing Campus,10Y1001A1001A82H,DE-WEST-GRID,1800.0,800.0,2500.0,625.0,625.0,0.91,10.0,90.0,500.0,600.0,3,0.40,2026-01-01T00:00:00Z
+PL-WAW-LOG01,Warsaw Automated Distribution Park,10YPL-AREA-----S,PL-CENTRAL,900.0,450.0,1200.0,300.0,300.0,0.89,10.0,95.0,250.0,350.0,3,0.55,2026-01-01T00:00:00Z

@@ -1,0 +1,41 @@
+name: dbt Hourly Run
+
+on:
+  schedule:
+    - cron: '10 * * * *'
+  workflow_dispatch:
+
+jobs:
+  dbt-build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: 'auth'
+        uses: 'google-github-actions/auth@v2'
+        with:
+          workload_identity_provider: '${{ secrets.WIF_PROVIDER }}'
+          service_account: '${{ secrets.WIF_SERVICE_ACCOUNT }}'
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dbt
+        run: pip install dbt-bigquery
+
+      - name: dbt Build
+        run: dbt build --target ${{ vars.DBT_TARGET || 'prod' }}
+        working-directory: dbt_energy
+        env:
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          DBT_TARGET: ${{ vars.DBT_TARGET || 'prod' }}
+          DBT_ENV_SUFFIX: ${{ vars.DBT_ENV_SUFFIX || 'prod' }}
+          BQ_DATASET_BRONZE: ${{ vars.BQ_DATASET_BRONZE || 'energy_bronze_prod' }}
+          BQ_DATASET_SILVER: ${{ vars.BQ_DATASET_SILVER || 'energy_silver_prod' }}
+          BQ_DATASET_GOLD: ${{ vars.BQ_DATASET_GOLD || 'energy_gold_prod' }}

@@ -1,0 +1,11 @@
+version: 2
+
+sources:
+  - name: bronze
+    schema: "{{ env_var('BQ_DATASET_BRONZE', 'energy_bronze_' ~ env_var('DBT_ENV_SUFFIX', target.name)) }}"
+    tables:
+      - name: raw_generation_actuals
+      - name: raw_day_ahead_prices
+      - name: raw_grid_forecasts
+      - name: raw_tennet_imbalance
+      - name: raw_tennet_congestion

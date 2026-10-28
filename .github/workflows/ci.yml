@@ -1,0 +1,51 @@
+name: Python & dbt CI
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Dependencies
+        run: |
+          pip install ruff pytest
+          pip install -r dashboard/requirements.txt
+          pip install -r ingestion/requirements.txt
+
+      - name: Lint and Format with Ruff
+        run: |
+          ruff check .
+          ruff format --check .
+
+      - name: Run Pytest
+        run: pytest tests/ -v
+        env:
+          GCP_PROJECT_ID: "test-project"
+
+  dbt-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          
+      - name: Install sqlfluff
+        run: pip install sqlfluff sqlfluff-templater-dbt
+        
+      - name: Lint SQL
+        working-directory: dbt_energy
+        run: sqlfluff lint models/ --dialect bigquery
