@@ -1,7 +1,5 @@
 {{ config(
-    materialized='incremental',
-    unique_key=['timestamp_utc', 'asset_id'],
-    incremental_strategy='merge',
+    materialized='table',
     partition_by={
       "field": "timestamp_utc",
       "data_type": "timestamp",
@@ -28,9 +26,7 @@ WITH RECURSIVE grid_metrics AS (
         norm_price,
         norm_ci
     FROM {{ ref('fct_hourly_grid_metrics') }}
-    {% if is_incremental() %}
-    WHERE timestamp_utc >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 48 HOUR)
-    {% endif %}
+    WHERE timestamp_utc >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 7 DAY)
 ),
 
 substation_congestion AS (

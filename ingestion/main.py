@@ -3,7 +3,12 @@ import os
 import pandas as pd
 
 from bq_loader import batch_load_dataframe_to_bronze
-from entsoe_client import fetch_actual_generation, fetch_day_ahead_prices, fetch_forecasts
+from entsoe_client import (
+    fetch_actual_generation,
+    fetch_crossborder_flows,
+    fetch_day_ahead_prices,
+    fetch_forecasts,
+)
 from tennet_client import fetch_tennet_congestion, fetch_tennet_imbalance
 
 
@@ -69,6 +74,26 @@ def ingest_entsoe_data(request):
                 df_gen, project_id, dataset_id, "raw_generation_actuals"
             )
             summary["rows_loaded"]["raw_generation_actuals"] = rows
+
+        elif job_type == "crossborder_flows":
+            lookback_hours = int(request_json.get("lookback_hours", 24))
+            flow_frames = []
+            for z in zones:
+                try:
+                    df_fl = fetch_crossborder_flows(z, lookback_hours)
+                    if df_fl is not None and not df_fl.empty:
+                        flow_frames.append(df_fl)
+                except Exception as exc:
+                    print(f"Error fetching crossborder flows for {z}: {exc}")
+
+            if flow_frames:
+                df_flows = pd.concat(flow_frames, ignore_index=True)
+                rows_fl = batch_load_dataframe_to_bronze(
+                    df_flows, project_id, dataset_id, "raw_crossborder_flows"
+                )
+                summary["rows_loaded"]["raw_crossborder_flows"] = rows_fl
+            else:
+                summary["rows_loaded"]["raw_crossborder_flows"] = 0
 
         elif job_type == "day_ahead_prices_and_forecasts":
             horizon_hours = int(request_json.get("horizon_hours", 36))

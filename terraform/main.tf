@@ -144,10 +144,11 @@ resource "google_cloudfunctions2_function" "entsoe_ingestor" {
   }
 
   service_config {
-    max_instance_count    = 1
+    max_instance_count    = 3
     min_instance_count    = 0
-    available_memory      = "512M"
-    timeout_seconds       = 120
+    available_memory      = "1Gi"
+    available_cpu         = "1"
+    timeout_seconds       = 300
     service_account_email = google_service_account.ingest_sa.email
 
     environment_variables = {
@@ -183,13 +184,36 @@ resource "google_cloud_scheduler_job" "hourly_generation_trigger" {
   name             = "trigger-entsoe-hourly-generation"
   schedule         = "5 * * * *"
   time_zone        = "Europe/Amsterdam"
-  attempt_deadline = "180s"
+  attempt_deadline = "300s"
 
   http_target {
     http_method = "POST"
     uri         = google_cloudfunctions2_function.entsoe_ingestor.service_config[0].uri
     body = base64encode(jsonencode({
       job_type       = "actual_generation"
+      lookback_hours = 24
+    }))
+    headers = {
+      "Content-Type" = "application/json"
+    }
+    oidc_token {
+      service_account_email = google_service_account.scheduler_sa.email
+      audience              = google_cloudfunctions2_function.entsoe_ingestor.service_config[0].uri
+    }
+  }
+}
+
+resource "google_cloud_scheduler_job" "hourly_crossborder_trigger" {
+  name             = "trigger-entsoe-crossborder-flows"
+  schedule         = "10 * * * *"
+  time_zone        = "Europe/Amsterdam"
+  attempt_deadline = "300s"
+
+  http_target {
+    http_method = "POST"
+    uri         = google_cloudfunctions2_function.entsoe_ingestor.service_config[0].uri
+    body = base64encode(jsonencode({
+      job_type       = "crossborder_flows"
       lookback_hours = 24
     }))
     headers = {
@@ -283,8 +307,8 @@ resource "google_cloud_run_v2_service" "dashboard" {
     service_account = google_service_account.ui_sa.email
 
     scaling {
-      min_instance_count = 0
-      max_instance_count = 1
+      min_instance_count = 1
+      max_instance_count = 5
     }
 
     containers {
@@ -292,8 +316,8 @@ resource "google_cloud_run_v2_service" "dashboard" {
 
       resources {
         limits = {
-          cpu    = "1"
-          memory = "512Mi"
+          cpu    = "2"
+          memory = "2Gi"
         }
         cpu_idle          = true
         startup_cpu_boost = true

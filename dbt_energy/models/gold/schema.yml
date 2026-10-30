@@ -66,3 +66,19 @@ models:
       - name: flag_ramp_load
         tests:
           - not_null
+
+  - name: fct_forecast_accuracy
+    description: "Backtesting mart comparing D-1 forecasted carbon intensity against realized generation carbon intensity with rolling 7-day MAE and RMSE."
+    columns:
+      - name: timestamp_utc
+        description: "Start of the hourly interval in UTC"
+        tests:
+          - not_null
+      - name: bidding_zone
+        description: "EIC zone code"
+        tests:
+          - not_null
+      - name: rolling_7d_mae_gco2_kwh
+        description: "Rolling 7-day Mean Absolute Error in gCO2/kWh"
+        tests:
+          - not_null

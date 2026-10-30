@@ -15,6 +15,7 @@ from dashboard.optimizer import (
     SCORE_RAMP_THRESHOLD,
     SOLAR_END_HOUR,
     SOLAR_START_HOUR,
+    compute_pareto_frontier,
     find_optimal_window,
     simulate_commercial_dispatch,
 )
@@ -250,3 +251,73 @@ def test_sql_python_dispatch_threshold_parity():
     assert f"<= {PRICE_CHARGE_GATE_EUR_KWH:.2f}" in sql_text
     assert f">= {PRICE_DISCHARGE_GATE_EUR_KWH:.2f}" in sql_text
     assert f"BETWEEN {SOLAR_START_HOUR} AND {SOLAR_END_HOUR}" in sql_text
+
+
+def test_degradation_cost_prevents_unprofitable_micro_cycling():
+    timestamps = pd.date_range(start="2028-10-01 00:00", periods=12, freq="1h", tz="UTC")
+    # Tiny price spread (0.004 EUR/kWh) well below battery wear cost (0.04 EUR/kWh)
+    prices = [0.100, 0.101, 0.102, 0.104, 0.103, 0.100] * 2
+    df_metrics = pd.DataFrame(
+        {
+            "timestamp_utc": timestamps,
+            "local_datetime": timestamps,
+            "price_eur_kwh": prices,
+            "carbon_intensity_gco2_kwh": [200.0] * 12,
+            "norm_price": [0.1, 0.3, 0.5, 0.9, 0.7, 0.1] * 2,
+            "norm_ci": [0.5] * 12,
+            "renewable_share_pct": [40.0] * 12,
+        }
+    )
+    asset_config = {
+        "solar_kwp": 0.0,
+        "grid_export_limit_kw": 500.0,
+        "bess_capacity_kwh": 1000.0,
+        "bess_max_charge_kw": 500.0,
+        "bess_max_discharge_kw": 500.0,
+        "bess_roundtrip_efficiency": 0.90,
+        "bess_min_soc_pct": 10.0,
+        "bess_max_soc_pct": 95.0,
+        "baseline_load_kw": 300.0,
+        "max_flexible_load_kw": 200.0,
+        "marginal_cycle_cost_eur_kwh": 0.04,
+    }
+
+    res = simulate_commercial_dispatch(df_metrics=df_metrics, asset_config=asset_config, alpha=1.0)
+    assert res["bess_cycles"] == 0.0
+    assert (res["df_schedule"]["bess_power_kw"] == 0.0).all()
+
+
+def test_pareto_frontier_and_custom_load_profile():
+    timestamps = pd.date_range(start="2028-10-01 00:00", periods=24, freq="1h", tz="UTC")
+    prices = [0.03] * 6 + [0.18] * 6 + [0.02] * 6 + [0.24] * 6
+    cis = [310.0] * 6 + [260.0] * 6 + [90.0] * 6 + [380.0] * 6
+    df_metrics = pd.DataFrame(
+        {
+            "timestamp_utc": timestamps,
+            "local_datetime": timestamps,
+            "price_eur_kwh": prices,
+            "carbon_intensity_gco2_kwh": cis,
+            "renewable_share_pct": [60.0] * 24,
+        }
+    )
+    custom_curve = {h: 200.0 + (h * 5.0) for h in range(24)}
+    asset_config = {
+        "solar_kwp": 800.0,
+        "grid_export_limit_kw": 400.0,
+        "bess_capacity_kwh": 1500.0,
+        "bess_max_charge_kw": 500.0,
+        "bess_max_discharge_kw": 500.0,
+        "bess_roundtrip_efficiency": 0.90,
+        "baseline_load_kw": 300.0,
+        "max_flexible_load_kw": 300.0,
+        "custom_load_profile_kw": custom_curve,
+    }
+
+    res = simulate_commercial_dispatch(df_metrics=df_metrics, asset_config=asset_config, alpha=0.5)
+    assert res["df_schedule"].iloc[0]["baseline_load_kw"] == 200.0
+    assert res["df_schedule"].iloc[10]["baseline_load_kw"] == 250.0
+
+    df_pareto = compute_pareto_frontier(df_metrics=df_metrics, asset_config=asset_config, steps=5)
+    assert len(df_pareto) == 5
+    assert "total_cost_eur" in df_pareto.columns
+    assert "total_emissions_kg" in df_pareto.columns

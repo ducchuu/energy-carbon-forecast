@@ -30,6 +30,7 @@ sys.modules["google.cloud.bigquery"] = bq_mock
 from dashboard.data_fetcher import (  # noqa: E402
     load_asset_constraints,
     load_dispatch_schedule,
+    load_forecast_accuracy,
     load_gold_metrics,
     load_tennet_congestion,
     save_asset_constraints_to_bq,
@@ -164,3 +165,29 @@ def test_save_asset_constraints_to_bq(mock_get_bq_client):
     loaded_df = mock_client.load_table_from_dataframe.call_args[0][0]
     assert loaded_df.iloc[0]["asset_id"] == "NL-AMS-DC01"
     assert "updated_at" in loaded_df.columns
+
+
+@patch("dashboard.data_fetcher.get_bq_client")
+def test_load_forecast_accuracy(mock_get_bq_client):
+    mock_client = MagicMock()
+    mock_client.project = "test-project"
+    mock_get_bq_client.return_value = mock_client
+
+    mock_query_job = MagicMock()
+    mock_query_job.to_dataframe.return_value = pd.DataFrame(
+        [
+            {
+                "timestamp_utc": "2026-10-01T12:00:00Z",
+                "bidding_zone": "10YNL----------L",
+                "rolling_7d_mae_gco2_kwh": 14.2,
+                "rolling_7d_rmse_gco2_kwh": 18.5,
+            }
+        ]
+    )
+    mock_client.query.return_value = mock_query_job
+
+    df = load_forecast_accuracy("10YNL----------L")
+    assert not df.empty
+    assert df.iloc[0]["rolling_7d_mae_gco2_kwh"] == 14.2
+    executed_sql = mock_client.query.call_args[0][0]
+    assert "fct_forecast_accuracy" in executed_sql

@@ -43,6 +43,14 @@ SCHEMAS = {
         bigquery.SchemaField("message_details", "STRING", mode="NULLABLE"),
         bigquery.SchemaField("ingested_at", "TIMESTAMP", mode="REQUIRED"),
     ],
+    "raw_crossborder_flows": [
+        bigquery.SchemaField("timestamp_utc", "TIMESTAMP", mode="REQUIRED"),
+        bigquery.SchemaField("bidding_zone", "STRING", mode="REQUIRED"),
+        bigquery.SchemaField("from_zone", "STRING", mode="REQUIRED"),
+        bigquery.SchemaField("to_zone", "STRING", mode="REQUIRED"),
+        bigquery.SchemaField("flow_mw", "FLOAT64", mode="NULLABLE"),
+        bigquery.SchemaField("ingested_at", "TIMESTAMP", mode="REQUIRED"),
+    ],
 }
 
 

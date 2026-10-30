@@ -10,15 +10,16 @@
     cluster_by=["bidding_zone"]
 ) }}
 
-WITH actual_hourly_carbon AS (
+WITH production_hourly_carbon AS (
     SELECT
         g.timestamp_utc,
         g.bidding_zone,
         SUM(g.generation_mw) AS total_generation_mw,
+        SUM(g.generation_mw * ef.emission_factor_gco2_kwh) AS total_production_emissions,
         SAFE_DIVIDE(
             SUM(g.generation_mw * ef.emission_factor_gco2_kwh),
             SUM(g.generation_mw)
-        ) AS actual_ci_gco2_kwh,
+        ) AS production_ci_gco2_kwh,
         SAFE_DIVIDE(
             SUM(CASE WHEN ef.is_renewable THEN g.generation_mw ELSE 0 END),
             SUM(g.generation_mw)
@@ -32,6 +33,59 @@ WITH actual_hourly_carbon AS (
     GROUP BY
         g.timestamp_utc,
         g.bidding_zone
+),
+
+crossborder_imports_hourly AS (
+    SELECT
+        fl.timestamp_utc,
+        fl.to_zone AS bidding_zone,
+        SUM(fl.flow_mw) AS imported_mw,
+        SUM(
+            fl.flow_mw * COALESCE(
+                nb.production_ci_gco2_kwh,
+                CASE fl.from_zone
+                    WHEN '10YNO-2--------T' THEN 24.0
+                    WHEN '10YSE-1--------K' THEN 35.0
+                    WHEN '10YFR-RTE------C' THEN 55.0
+                    WHEN '10YCH-SWISSGRIDZ' THEN 45.0
+                    WHEN '10YDK-1--------W' THEN 140.0
+                    WHEN '10YBE----------2' THEN 170.0
+                    WHEN '10YAT-APG------L' THEN 150.0
+                    WHEN '10YGB----------A' THEN 220.0
+                    WHEN '10YCZ-CEPS-----N' THEN 430.0
+                    WHEN '10YSK-SEPS-----K' THEN 210.0
+                    ELSE 300.0
+                END
+            )
+        ) AS imported_emissions
+    FROM {{ ref('stg_crossborder_flows') }} AS fl
+    LEFT JOIN production_hourly_carbon AS nb
+        ON fl.timestamp_utc = nb.timestamp_utc
+        AND fl.from_zone = nb.bidding_zone
+    {% if is_incremental() %}
+    WHERE fl.timestamp_utc >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 72 HOUR)
+    {% endif %}
+    GROUP BY
+        fl.timestamp_utc,
+        fl.to_zone
+),
+
+actual_hourly_carbon AS (
+    SELECT
+        pr.timestamp_utc,
+        pr.bidding_zone,
+        pr.total_generation_mw,
+        COALESCE(imp.imported_mw, 0.0) AS imported_mw,
+        pr.production_ci_gco2_kwh,
+        SAFE_DIVIDE(
+            pr.total_production_emissions + COALESCE(imp.imported_emissions, 0.0),
+            pr.total_generation_mw + COALESCE(imp.imported_mw, 0.0)
+        ) AS actual_ci_gco2_kwh,
+        pr.actual_renewable_share_pct
+    FROM production_hourly_carbon AS pr
+    LEFT JOIN crossborder_imports_hourly AS imp
+        ON pr.timestamp_utc = imp.timestamp_utc
+        AND pr.bidding_zone = imp.bidding_zone
 ),
 
 zone_congestion_hourly AS (

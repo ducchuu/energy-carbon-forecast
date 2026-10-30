@@ -7,9 +7,18 @@ except ImportError:
 
 from dashboard.asset_config import (
     DEFAULT_ASSET_CONSTRAINTS,
+    FACILITY_ARCHETYPE_PRESETS,
     get_default_assets_dataframe,
     render_asset_sidebar,
 )
+
+
+def test_facility_archetype_presets_defined():
+    assert "Cold Storage Logistics" in FACILITY_ARCHETYPE_PRESETS
+    assert "EV Fleet Depot" in FACILITY_ARCHETYPE_PRESETS
+    assert "Batch Chemical Plant" in FACILITY_ARCHETYPE_PRESETS
+    assert FACILITY_ARCHETYPE_PRESETS["Cold Storage Logistics"]["solar_kwp"] == 500.0
+    assert FACILITY_ARCHETYPE_PRESETS["Cold Storage Logistics"]["bess_capacity_kwh"] == 1000.0
 
 
 def test_get_default_assets_dataframe():

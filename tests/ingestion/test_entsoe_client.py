@@ -9,6 +9,7 @@ sys.modules["entsoe"] = entsoe_mock
 
 from ingestion.entsoe_client import (  # noqa: E402
     fetch_actual_generation,
+    fetch_crossborder_flows,
     fetch_day_ahead_prices,
     fetch_forecasts,
     normalize_psr_code,
@@ -98,3 +99,22 @@ def test_fetch_forecasts_combines_wind_solar_and_load():
 
     assert set(df["metric_type"]) == {"SOLAR", "WIND_ONSHORE", "TOTAL_LOAD"}
     assert len(df) == 6
+
+
+@patch.dict(os.environ, {"ENTSOE_API_KEY": "fake_key"})
+def test_fetch_crossborder_flows():
+    mock_client = MagicMock()
+    entsoe_mock.EntsoePandasClient.return_value = mock_client
+
+    idx = pd.date_range("2026-10-01 00:00:00Z", periods=2, freq="1h")
+    mock_ts = pd.Series([600.0, 750.0], index=idx)
+    mock_client.query_crossborder_flows.return_value = mock_ts
+
+    df = fetch_crossborder_flows("10YNL----------L", lookback_hours=2)
+
+    assert not df.empty
+    assert "from_zone" in df.columns
+    assert "to_zone" in df.columns
+    assert "flow_mw" in df.columns
+    assert (df["to_zone"] == "10YNL----------L").all()
+    assert df.iloc[0]["flow_mw"] == 600.0

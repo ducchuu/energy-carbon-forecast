@@ -40,3 +40,18 @@ models:
       - name: substation_area
         tests:
           - not_null
+  - name: stg_crossborder_flows
+    description: "Deduplicated and hour-aggregated ENTSO-E A11 cross-border physical power flows"
+    columns:
+      - name: timestamp_utc
+        tests:
+          - not_null
+      - name: bidding_zone
+        tests:
+          - not_null
+      - name: from_zone
+        tests:
+          - not_null
+      - name: to_zone
+        tests:
+          - not_null

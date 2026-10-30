@@ -1,8 +1,53 @@
-from typing import Any, Dict
+from typing import Any
 
 import pandas as pd
 
-DEFAULT_ASSET_CONSTRAINTS: Dict[str, Dict[str, Any]] = {
+FACILITY_ARCHETYPE_PRESETS: dict[str, dict[str, Any]] = {
+    "Cold Storage Logistics": {
+        "label": "Cold Storage Logistics Warehouse",
+        "description": "High thermal inertia, 500 kW solar, 1 MWh BESS",
+        "solar_kwp": 500.0,
+        "grid_export_limit_kw": 350.0,
+        "bess_capacity_kwh": 1000.0,
+        "bess_max_charge_kw": 350.0,
+        "bess_max_discharge_kw": 350.0,
+        "bess_roundtrip_efficiency": 0.91,
+        "baseline_load_kw": 280.0,
+        "max_flexible_load_kw": 320.0,
+        "marginal_cycle_cost_eur_kwh": 0.025,
+        "alpha_weight": 0.45,
+    },
+    "EV Fleet Depot": {
+        "label": "EV Fleet Charging Depot",
+        "description": "Strict 4-hour overnight charging window, high peak demand",
+        "solar_kwp": 800.0,
+        "grid_export_limit_kw": 500.0,
+        "bess_capacity_kwh": 2200.0,
+        "bess_max_charge_kw": 750.0,
+        "bess_max_discharge_kw": 750.0,
+        "bess_roundtrip_efficiency": 0.90,
+        "baseline_load_kw": 180.0,
+        "max_flexible_load_kw": 900.0,
+        "marginal_cycle_cost_eur_kwh": 0.030,
+        "alpha_weight": 0.65,
+    },
+    "Batch Chemical Plant": {
+        "label": "Batch Chemical / Industrial Plant",
+        "description": "Discrete K-hour high-load shiftable batch process",
+        "solar_kwp": 2500.0,
+        "grid_export_limit_kw": 1000.0,
+        "bess_capacity_kwh": 4000.0,
+        "bess_max_charge_kw": 1000.0,
+        "bess_max_discharge_kw": 1000.0,
+        "bess_roundtrip_efficiency": 0.88,
+        "baseline_load_kw": 800.0,
+        "max_flexible_load_kw": 1200.0,
+        "marginal_cycle_cost_eur_kwh": 0.020,
+        "alpha_weight": 0.60,
+    },
+}
+
+DEFAULT_ASSET_CONSTRAINTS: dict[str, dict[str, Any]] = {
     "NL-AMS-DC01": {
         "asset_id": "NL-AMS-DC01",
         "facility_name": "Amsterdam Cold Storage & Logistics Hub",
@@ -88,7 +133,7 @@ def get_default_assets_dataframe(bidding_zone: str = None) -> pd.DataFrame:
     return df
 
 
-def render_asset_sidebar(df_assets: pd.DataFrame, bidding_zone: str) -> Dict[str, Any]:
+def render_asset_sidebar(df_assets: pd.DataFrame, bidding_zone: str) -> dict[str, Any]:
     import streamlit as st
 
     st.sidebar.header("Commercial Facility Profile")
@@ -105,6 +150,22 @@ def render_asset_sidebar(df_assets: pd.DataFrame, bidding_zone: str) -> Dict[str
     selected_label = st.sidebar.selectbox("Select Asset", list(asset_options.keys()))
     selected_asset_id = asset_options[selected_label]
     asset_data = zone_assets[zone_assets["asset_id"] == selected_asset_id].iloc[0].to_dict()
+
+    if hasattr(st.sidebar, "caption") and hasattr(st.sidebar, "columns"):
+        st.sidebar.caption("One-Click Facility Archetype Presets")
+        p_cols = st.sidebar.columns(3)
+        if isinstance(p_cols, (list, tuple)) and len(p_cols) == 3:
+            for col, (preset_key, preset_vals) in zip(
+                p_cols, FACILITY_ARCHETYPE_PRESETS.items(), strict=False
+            ):
+                if col.button(preset_key, key=f"preset_{preset_key}", help=preset_vals["description"]):
+                    if isinstance(getattr(st, "session_state", None), dict):
+                        st.session_state["active_archetype_preset"] = preset_key
+
+        if isinstance(getattr(st, "session_state", None), dict):
+            active_preset = st.session_state.get("active_archetype_preset")
+            if active_preset in FACILITY_ARCHETYPE_PRESETS:
+                asset_data.update(FACILITY_ARCHETYPE_PRESETS[active_preset])
 
     st.sidebar.subheader("Asset Physical Constraints")
     with st.sidebar.form(key=f"asset_constraints_form_{selected_asset_id}"):
@@ -184,7 +245,12 @@ def render_asset_sidebar(df_assets: pd.DataFrame, bidding_zone: str) -> Dict[str
     if submitted:
         from data_fetcher import save_asset_constraints_to_bq
 
-        success = save_asset_constraints_to_bq(updated_config)
+        save_dict = {
+            k: v
+            for k, v in updated_config.items()
+            if k in DEFAULT_ASSET_CONSTRAINTS["NL-AMS-DC01"]
+        }
+        success = save_asset_constraints_to_bq(save_dict)
         if success:
             st.sidebar.success("Asset constraints saved and synced to BigQuery!")
         else:

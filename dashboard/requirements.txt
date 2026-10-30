@@ -7,3 +7,4 @@ db-dtypes
 python-dotenv
 plotly
 numpy
+scipy

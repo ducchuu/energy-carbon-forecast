@@ -12,7 +12,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt && \
     rm -rf /root/.cache /tmp/*
 
-COPY *.py .
+COPY *.py ./
 
 EXPOSE 8080
 
