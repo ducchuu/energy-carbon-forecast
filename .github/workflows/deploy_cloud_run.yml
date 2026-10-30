@@ -44,10 +44,11 @@ jobs:
             --image="europe-west4-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/energy-pipeline-containers/dashboard:${{ github.sha }}" \
             --region="europe-west4" \
             --service-account="${{ secrets.UI_SERVICE_ACCOUNT }}" \
-            --min-instances=0 \
-            --max-instances=1 \
+            --min-instances=1 \
+            --max-instances=5 \
             --concurrency=80 \
-            --cpu=1 \
-            --memory=512Mi \
+            --cpu=2 \
+            --memory=2Gi \
             --cpu-boost \
-            --update-env-vars="GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}"
+            --update-env-vars="GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},BQ_DATASET_GOLD=energy_gold_dev,BQ_DATASET_SILVER=energy_silver_dev" \
+            --allow-unauthenticated
