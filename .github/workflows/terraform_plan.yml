@@ -46,7 +46,7 @@ jobs:
         continue-on-error: true
         env:
           TF_VAR_project_id: ${{ secrets.GCP_PROJECT_ID }}
-          TF_VAR_environment: ${{ vars.TF_ENVIRONMENT || 'prod' }}
+          TF_VAR_environment: ${{ vars.TF_ENVIRONMENT || 'dev' }}
           TF_VAR_billing_account: ${{ secrets.GCP_BILLING_ACCOUNT || '000000-000000-000000' }}
           TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL || 'alerts@example.com' }}
           TF_VAR_monthly_budget_usd: ${{ vars.MONTHLY_BUDGET_USD || '25' }}

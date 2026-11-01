@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: '10 * * * *'
   workflow_dispatch:
+    inputs:
+      target:
+        description: 'dbt target environment (dev or prod)'
+        required: false
+        default: 'dev'
 
 jobs:
   dbt-build:
@@ -30,12 +35,12 @@ jobs:
         run: pip install dbt-bigquery
 
       - name: dbt Build
-        run: dbt build --target ${{ vars.DBT_TARGET || 'prod' }}
+        run: dbt build --target ${{ inputs.target || vars.DBT_TARGET || 'dev' }}
         working-directory: dbt_energy
         env:
           GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
-          DBT_TARGET: ${{ vars.DBT_TARGET || 'prod' }}
-          DBT_ENV_SUFFIX: ${{ vars.DBT_ENV_SUFFIX || 'prod' }}
-          BQ_DATASET_BRONZE: ${{ vars.BQ_DATASET_BRONZE || 'energy_bronze_prod' }}
-          BQ_DATASET_SILVER: ${{ vars.BQ_DATASET_SILVER || 'energy_silver_prod' }}
-          BQ_DATASET_GOLD: ${{ vars.BQ_DATASET_GOLD || 'energy_gold_prod' }}
+          DBT_TARGET: ${{ inputs.target || vars.DBT_TARGET || 'dev' }}
+          DBT_ENV_SUFFIX: ${{ inputs.target || vars.DBT_ENV_SUFFIX || 'dev' }}
+          BQ_DATASET_BRONZE: ${{ vars.BQ_DATASET_BRONZE || format('energy_bronze_{0}', inputs.target || vars.DBT_ENV_SUFFIX || 'dev') }}
+          BQ_DATASET_SILVER: ${{ vars.BQ_DATASET_SILVER || format('energy_silver_{0}', inputs.target || vars.DBT_ENV_SUFFIX || 'dev') }}
+          BQ_DATASET_GOLD: ${{ vars.BQ_DATASET_GOLD || format('energy_gold_{0}', inputs.target || vars.DBT_ENV_SUFFIX || 'dev') }}
