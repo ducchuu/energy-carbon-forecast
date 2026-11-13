@@ -1,9 +1,12 @@
 # OptimalEnergy: Autonomous Commercial Asset Energy Arbitrage & Carbon Dispatch Platform
 
 > **A Production Zero-Cost Serverless Data Pipeline, Real-Time Model Predictive Control (MPC) Battery Storage Optimizer, and Flow-Traced Scope 2 Carbon Accounting Engine on Google Cloud Platform**
+>
+> **Live Demo:** [https://energy-optimizer-dashboard-336194874768.europe-west4.run.app/](https://energy-optimizer-dashboard-336194874768.europe-west4.run.app/)
 
-[![Python & dbt CI](https://github.com/your-username/energy-carbon-pipeline/actions/workflows/ci.yml/badge.svg)](https://github.com/your-username/energy-carbon-pipeline/actions/workflows/ci.yml)
-[![dbt Hourly Transformation](https://github.com/your-username/energy-carbon-pipeline/actions/workflows/dbt_hourly_run.yml/badge.svg)](https://github.com/your-username/energy-carbon-pipeline/actions/workflows/dbt_hourly_run.yml)
+[![Live Demo](https://img.shields.io/badge/Live_Demo-Streamlit_Console-FF4B4B?logo=streamlit&logoColor=white)](https://energy-optimizer-dashboard-336194874768.europe-west4.run.app/)
+[![Python & dbt CI](https://github.com/ducchuu/energy-carbon-forecast/actions/workflows/ci.yml/badge.svg)](https://github.com/ducchuu/energy-carbon-forecast/actions/workflows/ci.yml)
+[![dbt Hourly Transformation](https://github.com/ducchuu/energy-carbon-forecast/actions/workflows/dbt_hourly_run.yml/badge.svg)](https://github.com/ducchuu/energy-carbon-forecast/actions/workflows/dbt_hourly_run.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
@@ -51,17 +54,17 @@ The pipeline eliminates idle cloud infrastructure by utilizing an **event-driven
 
 ```mermaid
 flowchart TD
-    subgraph Data Sources ["External Data Telemetry Sources"]
+    subgraph DataSources ["External Data Telemetry Sources"]
         ENTSOE["ENTSO-E Transparency REST API<br/>(A44 Prices, A75 Actuals, A69 VRE, A65 Load, A11 Physical Flows)"]
         TENNET["TenneT Publication API<br/>(Settlement Imbalance & Substation Alerts)"]
     end
 
-    subgraph Control Plane ["GCP: Orchestration & Security"]
+    subgraph ControlPlane ["GCP: Orchestration & Security"]
         Scheduler["Cloud Scheduler<br/>(Hourly & Daily Cron Triggers)"]
         SecretMgr["Secret Manager<br/>(ENTSOE_API_KEY, TENNET_API_KEY)"]
     end
 
-    subgraph Ingestion Compute ["GCP: Ingestion Layer (Scale-to-Zero)"]
+    subgraph IngestionCompute ["GCP: Ingestion Layer (Scale-to-Zero)"]
         CloudFunc["Cloud Run Function (2nd Gen)<br/>(Python 3.11 + PyArrow In-Memory Batch Buffer + TimeoutSession)"]
     end
 
@@ -71,16 +74,16 @@ flowchart TD
         Gold[("Gold Layer (energy_gold_dev)<br/>fct_hourly_grid_metrics (Consumption CI)<br/>fct_asset_dispatch_schedule<br/>fct_forecast_accuracy (7d MAE/RMSE)<br/>dim_asset_constraints")]
     end
 
-    subgraph Transformation Engine ["CI/CD Transformation"]
+    subgraph TransformationEngine ["CI/CD Transformation"]
         DBT["dbt Core (GitHub Actions / Cloud Build)<br/>Incremental Merges + Data Quality Contracts"]
         IPCC_Seed["dbt Seed: emission_factors.csv<br/>(IPCC AR5 Median gCO2eq/kWh)"]
         Asset_Seed["dbt Seed: default_asset_constraints.csv<br/>(Facility Solar, BESS, Inverter Specs)"]
     end
 
-    subgraph Serving Layer ["GCP: Serving & Optimization Console"]
+    subgraph ServingLayer ["GCP: Serving & Optimization Console"]
         StreamlitApp["Streamlit Dispatch Console<br/>(Cloud Run: min=0, max=1, concurrency=80, cpu-boost)"]
         RAM_Cache["Tier 1 & Tier 2 RAM Cache<br/>(@st.cache_resource + @st.cache_data ttl=3600)"]
-        HiGHS_LP["Tier 3: HiGHS Linear Programming (MPC) Optimizer<br/>(State-of-Charge Continuity + Degradation Cost < 4ms)"]
+        HiGHS_LP["Tier 3: HiGHS Linear Programming (MPC) Optimizer<br/>(State-of-Charge Continuity + Degradation Cost &lt; 4ms)"]
         Operator(("Asset Operations Manager / BMS"))
     end
 
@@ -98,7 +101,7 @@ flowchart TD
     DBT -.->|Compiles GoogleSQL| Silver
     DBT -.->|Executes Table/Incremental Builds| Gold
 
-    Gold -->|Cached Query <= 50MB Cap| StreamlitApp
+    Gold -->|"Cached Query <= 50MB Cap"| StreamlitApp
     StreamlitApp --> RAM_Cache
     RAM_Cache --> HiGHS_LP
     HiGHS_LP --> Operator
@@ -111,7 +114,7 @@ flowchart TD
 
 ## 3. Zero-Cost Serverless FinOps & Quota Mathematics
 
-Traditional enterprise data engineering architectures provision managed clusters (e.g., Cloud Composer / Apache Airflow) that bill continuously 24/7, costing **~$300–$500/month** even when idling 99.9% of the day.
+Traditional enterprise data engineering architectures provision managed clusters (e.g., Cloud Composer / Apache Airflow) that bill continuously 24/7, costing **~\$300–\$500/month** even when idling 99.9% of the day.
 
 OptiGrid scales entirely to zero between executions. Ingestion containers spin up for ~3.5 seconds per run, stream data via shared batch pools, and terminate immediately.
 
@@ -126,11 +129,11 @@ OptiGrid scales entirely to zero between executions. Ingestion containers spin u
 | **BigQuery Query Compute** | dbt Builds ($744 \times 2\text{ MB}$) + Dashboard ($744 \times 1\text{ MB}$) | **$\sim 2.22\text{ GiB}$** | $1,024\text{ GiB (1 TiB) / mo}$ | **$0.22\%$** |
 | **Artifact Registry** | Container images with Terraform `keep_count = 1` | **$0.28\text{ GiB}$** | $0.50\text{ GiB / mo}$ | **$56.0\%$** |
 | **Secret Manager** | 2 active secrets (`ENTSOE_API_KEY`, `TENNET_API_KEY`) | **$2\text{ versions}$** | $6\text{ versions / mo}$ | **$33.3\%$** |
-| **Cloud Scheduler** | 4 cron triggers (Hourly Actuals, Daily Forecasts, TenneT, Cross-Border) | **$4\text{ jobs}$** | $3\text{ free jobs + \$0.10/mo}$ | **$\sim \$0.10 / \text{mo}$** |
-| **Monthly Bill** | | | | **~$0.00 / month** |
+| **Cloud Scheduler** | 4 cron triggers (Hourly Actuals, Daily Forecasts, TenneT, Cross-Border) | **$4\text{ jobs}$** | 3 free jobs + \$0.10/mo | **~\$0.10 / mo** |
+| **Monthly Bill** | | | | **~\$0.00 / month** |
 
 ### The Streaming API vs. PyArrow Batch Load Trap
-`bigquery_client.insert_rows_json()` uses BigQuery's legacy Streaming API, which bypasses free query quotas, bills $0.01 per 200 MB ingested, and locks partitions against DML merges for up to 90 minutes. OptiGrid utilizes `client.load_table_from_dataframe()` with PyArrow Parquet serialization, executing on Google's shared batch slot pool at **$0.00 compute cost**.
+`bigquery_client.insert_rows_json()` uses BigQuery's legacy Streaming API, which bypasses free query quotas, bills \$0.01 per 200 MB ingested, and locks partitions against DML merges for up to 90 minutes. OptiGrid utilizes `client.load_table_from_dataframe()` with PyArrow Parquet serialization, executing on Google's shared batch slot pool at **\$0.00 compute cost**.
 
 ---
 
@@ -212,7 +215,7 @@ $$\hat{R}_t = \max\left(0, \; \hat{L}_t - \hat{G}_{\text{VRE}, t} - \hat{G}_{\te
 
 Where:
 * $\hat{L}_t$ is forecasted total load (`A65`).
-* $\hat{G}_{\text{VRE}, t} = \hat{G}_{\text{solar}, t} + \hat{G}_{\text{wind\_on}, t} + \hat{G}_{\text{wind\_off}, t}$ (`A69`).
+* $\hat{G}_{\text{VRE}, t} = \hat{G}_{\text{solar}, t} + \hat{G}_{\text{wind-on}, t} + \hat{G}_{\text{wind-off}, t}$ (`A69`).
 * $\hat{G}_{\text{base}}$ and $EF_{\text{base}}$ calibrate dynamically from trailing 72 hours of low-carbon baseload (`B09`, `B11`, `B14`).
 * $\overline{EF}_{\text{thermal}}$ is the empirical emission factor of dispatchable thermal plants over the trailing 168 hours (7 days):
 
@@ -220,17 +223,19 @@ $$\overline{EF}_{\text{thermal}} = \frac{\sum_{\tau \in [t_{\text{now}}-168\text
 
 The physical residual-load forecast equation is:
 
-$$\widehat{CI}_t = \frac{\hat{G}_{\text{solar}, t} EF_{\text{solar}} + \hat{G}_{\text{wind\_on}, t} EF_{\text{wind\_on}} + \hat{G}_{\text{wind\_off}, t} EF_{\text{wind\_off}} + \hat{G}_{\text{base}} EF_{\text{base}} + \hat{R}_t \overline{EF}_{\text{thermal}}}{\max\left(\hat{L}_t, \; \hat{G}_{\text{VRE}, t} + \hat{G}_{\text{base}}\right)}$$
+$$\widehat{CI}_t = \frac{\hat{G}_{\text{solar}, t} EF_{\text{solar}} + \hat{G}_{\text{wind-on}, t} EF_{\text{wind-on}} + \hat{G}_{\text{wind-off}, t} EF_{\text{wind-off}} + \hat{G}_{\text{base}} EF_{\text{base}} + \hat{R}_t \overline{EF}_{\text{thermal}}}{\max\left(\hat{L}_t, \; \hat{G}_{\text{VRE}, t} + \hat{G}_{\text{base}}\right)}$$
 
 ### Step 3: High-Speed Linear Programming (HiGHS MPC) Battery Arbitrage
 OptiGrid formulates the multi-period day-ahead BESS dispatch as a **Linear Program (LP)** solved via the high-speed C++ HiGHS solver in `scipy.optimize.linprog`:
 
 $$\min_{c_t, d_t} \sum_{t=1}^N \left( \left(P_t + \lambda^{\text{deg}}\right) c_t - \left(P_t - \lambda^{\text{deg}}\right) d_t - \beta_t^{\text{cong}} c_t \right)$$
 
-Subject to physical constraints for all $t \in \{1, \dots, N\}$:
-1. **Power Limits:** $0 \le c_t \le P^{\text{max\_charge}}, \quad 0 \le d_t \le P^{\text{max\_discharge}}$
+Subject to physical constraints for all $t \in \lbrace 1, \dots, N \rbrace$:
+1. **Power Limits:** $0 \le c_t \le P_{\text{charge}}^{\max}, \quad 0 \le d_t \le P_{\text{discharge}}^{\max}$
 2. **State-of-Charge Continuity:**
+
    $$SoC_t = SoC_0 + \sum_{\tau=1}^t \left( c_\tau \sqrt{\eta} - \frac{d_\tau}{\sqrt{\eta}} \right)$$
+
 3. **Capacity Bounds:** $SoC^{\text{min}} \le SoC_t \le SoC^{\text{max}}$
 4. **Battery Cell Degradation Gate ($\lambda^{\text{deg}}$):** Marginal degradation cost amortized per kWh cycled ($\sim 0.02\text{--}0.04\text{ EUR/kWh}$). The battery only cycles when the price spread or carbon value exceeds physical cell wear.
 5. **Congestion & Negative Price Absorption ($\beta_t^{\text{cong}}$):** When rooftop solar generation exceeds substation export caps, the objective prioritizes battery absorption over curtailment.
@@ -347,7 +352,7 @@ energy-carbon/
 
 ## 9. Infrastructure-as-Code (Terraform Provisioning)
 
-The [`terraform/main.tf`](file:///Users/mikolajduchlinski/Desktop/energy_carbon/terraform/main.tf) configuration automates the cloud footprint using principle-of-least-privilege IAM service accounts:
+The [`terraform/main.tf`](terraform/main.tf) configuration automates the cloud footprint using principle-of-least-privilege IAM service accounts:
 
 1. **BigQuery Datasets:** Creates `energy_bronze_dev`, `energy_silver_dev`, and `energy_gold_dev` in location `EU`.
 2. **Service Accounts:**
@@ -391,7 +396,7 @@ ruff format --check .
 pytest tests/ -v
 ```
 
-The GitHub Actions workflow [`.github/workflows/ci.yml`](file:///Users/mikolajduchlinski/Desktop/energy_carbon/.github/workflows/ci.yml) executes these checks on every Pull Request.
+The GitHub Actions workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) executes these checks on every Pull Request.
 
 ---
 
@@ -404,8 +409,8 @@ The GitHub Actions workflow [`.github/workflows/ci.yml`](file:///Users/mikolajdu
 
 ### Step 1: Environment Setup
 ```bash
-git clone https://github.com/your-username/energy-carbon-pipeline.git
-cd energy-carbon-pipeline
+git clone https://github.com/ducchuu/energy-carbon-forecast.git
+cd energy-carbon-forecast
 
 python3 -m venv .venv
 source .venv/bin/activate
