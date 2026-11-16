@@ -464,11 +464,13 @@ def build_forecast_accuracy_chart(
 
     if df_accuracy is not None and not df_accuracy.empty and "actual_ci_gco2_kwh" in df_accuracy.columns:
         acc = df_accuracy.sort_values("local_datetime")
+        scatter_mode = "lines" if len(acc) >= 3 else "lines+markers"
         fig.add_trace(
             go.Scatter(
                 x=acc["local_datetime"],
                 y=acc["actual_ci_gco2_kwh"],
                 name="Actual CI (g/kWh)",
+                mode=scatter_mode,
                 line=dict(color="#10B981", width=2.4),
             ),
             row=1,
@@ -479,6 +481,7 @@ def build_forecast_accuracy_chart(
                 x=acc["local_datetime"],
                 y=acc["forecast_ci_gco2_kwh"],
                 name="Forecast CI (g/kWh)",
+                mode=scatter_mode,
                 line=dict(color="#38BDF8", width=2.2, dash="dash"),
             ),
             row=1,

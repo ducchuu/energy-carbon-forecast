@@ -30,22 +30,14 @@ def inject_custom_css() -> None:
             background-color: var(--bg-canvas) !important;
             color: var(--text-primary);
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-            overflow: auto;
+            overflow-x: hidden;
         }
 
-        /* Fixed 1920x1080 Control-Room Frame */
+        /* Responsive Control-Room Canvas (calibrated for 1920x1080, scales cleanly to 2K+) */
         [data-testid="stApp"] {
-            width: 1920px !important;
-            min-width: 1920px !important;
-            max-width: 1920px !important;
-            height: 1080px !important;
-            min-height: 1080px !important;
-            max-height: 1080px !important;
-            margin: 0 auto !important;
+            width: 100% !important;
+            min-height: 100vh !important;
             background: radial-gradient(circle at 18% 0%, #111C33 0%, #090D16 52%, #060911 100%) !important;
-            border: 1px solid rgba(148, 163, 184, 0.12);
-            box-shadow: 0 24px 80px rgba(0, 0, 0, 0.75);
-            overflow: hidden !important;
         }
 
         [data-testid="stHeader"] {
@@ -62,12 +54,10 @@ def inject_custom_css() -> None:
             visibility: hidden;
         }
 
-        /* Sidebar fixed width inside 1920x1080 frame */
+        /* Sidebar responsive width */
         [data-testid="stSidebar"] {
-            width: 310px !important;
-            min-width: 310px !important;
-            max-width: 310px !important;
-            height: 1080px !important;
+            width: clamp(275px, 16.5vw, 340px) !important;
+            min-width: 275px !important;
             background: linear-gradient(180deg, #0B1120 0%, #080C17 100%) !important;
             border-right: 1px solid var(--border-subtle) !important;
         }
@@ -85,17 +75,16 @@ def inject_custom_css() -> None:
             letter-spacing: -0.01em;
         }
 
-        /* Main container tightly calibrated to remaining 1610x1080 */
+        /* Main container fills available viewport width & height */
         [data-testid="stMain"] {
-            height: 1080px !important;
-            overflow-y: auto !important;
+            min-height: 100vh !important;
             overflow-x: hidden !important;
         }
 
         [data-testid="stMainBlockContainer"],
         .block-container {
             max-width: 100% !important;
-            padding: 1.1rem 1.75rem 0.75rem 1.75rem !important;
+            padding: 1rem clamp(1.1rem, 1.8vw, 2.2rem) 1rem clamp(1.1rem, 1.8vw, 2.2rem) !important;
         }
 
         /* Custom Header Command Bar */

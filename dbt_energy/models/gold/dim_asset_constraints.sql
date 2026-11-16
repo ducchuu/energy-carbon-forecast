@@ -3,7 +3,8 @@
     unique_key='asset_id',
     incremental_strategy='merge',
     full_refresh=false,
-    cluster_by=['bidding_zone', 'asset_id']
+    cluster_by=['bidding_zone', 'asset_id'],
+    pre_hook="{% if is_incremental() %}CREATE OR REPLACE TABLE {{ this }} CLUSTER BY bidding_zone, asset_id AS SELECT * FROM {{ this }} QUALIFY ROW_NUMBER() OVER (PARTITION BY asset_id ORDER BY updated_at DESC) = 1{% endif %}"
 ) }}
 
 WITH seed_defaults AS (

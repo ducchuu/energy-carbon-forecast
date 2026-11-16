@@ -310,7 +310,7 @@ def render_dashboard():
         """
         <div class="og-side-footer">
             <b>Engine:</b> SciPy HiGHS LP MPC<br/>
-            <b>Viewport Lock:</b> 1920 × 1080 px<br/>
+            <b>Layout:</b> 1080p+ Adaptive Grid<br/>
             <b>Data Cache:</b> BigQuery + RAM TTL
         </div>
         """,
