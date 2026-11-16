@@ -25,7 +25,12 @@ from optimizer import (
     compute_pareto_frontier,
     simulate_commercial_dispatch,
 )
-from ui_theme import inject_custom_css, render_header_bar, render_kpi_strip
+from ui_theme import (
+    inject_custom_css,
+    render_elt_pipeline_flow,
+    render_header_bar,
+    render_kpi_strip,
+)
 
 load_dotenv(override=True)
 
@@ -310,7 +315,6 @@ def render_dashboard():
         """
         <div class="og-side-footer">
             <b>Engine:</b> SciPy HiGHS LP MPC<br/>
-            <b>Layout:</b> 1080p+ Adaptive Grid<br/>
             <b>Data Cache:</b> BigQuery + RAM TTL
         </div>
         """,
@@ -643,6 +647,63 @@ def render_dashboard():
         with exp_col3:
             with st.popover("👁️ Preview Modbus JSON", use_container_width=True):
                 st.code(modbus_json_str[:1800], language="json")
+
+    with st.expander("Pipeline Architecture, dbt ELT Lineage & Live Calculations", expanded=False):
+        n_total = len(df_sched)
+        if "is_forecasted" in df_sched.columns:
+            n_forecast = int(df_sched["is_forecasted"].sum())
+            n_actual = n_total - n_forecast
+        else:
+            n_forecast = n_total
+            n_actual = 0
+
+        render_elt_pipeline_flow(
+            total_hours=n_total,
+            actual_hours=n_actual,
+            forecast_hours=n_forecast,
+            alpha=alpha,
+            marginal_cycle_cost=marginal_cycle_cost,
+            mae_value=mae_value,
+        )
+
+        calc_col1, calc_col2 = st.columns([1.35, 1.0], gap="medium")
+        with calc_col1:
+            hour_labels = df_sched["local_datetime"].dt.strftime("%Y-%m-%d %H:%M").tolist()
+            selected_hour_label = st.selectbox(
+                "Inspect Backend Calculation for Hour",
+                options=hour_labels,
+                index=0,
+                key="elt_inspector_hour",
+            )
+            sel_idx = hour_labels.index(selected_hour_label)
+            r = df_sched.iloc[sel_idx]
+            net_eff_solar = max(0.0, float(r["estimated_solar_kw"]) - float(r["curtailed_solar_kw"]))
+            st.markdown(
+                f"""
+                <div class="og-math-box">
+                    <div><b>1. Multi-Objective Signal:</b> Score<sub>t</sub> = {alpha:.2f}·P̃<sub>t</sub> + {1.0 - alpha:.2f}·CĨ<sub>t</sub> = <span style="color:#38BDF8;">{float(r['composite_score']):.3f}</span></div>
+                    <div><b>2. Physical Power Balance:</b> Base ({float(r['baseline_load_kw']):.0f}) + Flex ({float(r['flex_load_kw']):.0f}) + BESS ({float(r['bess_power_kw']):+.0f}) − Solar ({net_eff_solar:.0f}) = <span style="color:#34D399;">{float(r['net_grid_import_kw']):+.1f} kW</span></div>
+                    <div><b>3. Hourly Settlement:</b> Baseline €{float(r['baseline_hourly_cost_eur']):.2f} − MPC €{float(r['optimized_hourly_cost_eur']):.2f} (incl. €{float(r['degradation_cost_eur']):.2f} wear) = <span style="color:#10B981;">€{float(r['cost_saving_eur']):+.2f}</span></div>
+                    <div><b>4. Dispatch Instruction:</b> <span style="color:#A78BFA;">{r['dispatch_action']}</span> · End-of-Hour SoC: {float(r['bess_soc_pct']):.1f}%</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        with calc_col2:
+            st.markdown(
+                """
+                <div class="og-panel" style="margin-bottom:0;">
+                    <div class="og-panel-title"><span>dbt Warehouse & Data Quality Contracts</span></div>
+                    <div class="og-stat-row"><span class="og-stat-k">DAG Inventory</span><span class="og-stat-v">12 models · 2 seeds · 29 tests</span></div>
+                    <div class="og-stat-row"><span class="og-stat-k">15m → 1h Aggregation</span><span class="og-stat-v">AVG(MW) before CI ratio</span></div>
+                    <div class="og-stat-row"><span class="og-stat-k">Cross-Border Carbon</span><span class="og-stat-v">Flow-traced consumption CI</span></div>
+                    <div class="og-stat-row"><span class="og-stat-k">Dim Constraint Guard</span><span class="og-stat-v">pre_hook QUALIFY dedup</span></div>
+                    <div class="og-stat-row"><span class="og-stat-k">Dashboard Cache</span><span class="og-stat-v">@st.cache_data (15–60m TTL)</span></div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
 
 
 if __name__ == "__main__":

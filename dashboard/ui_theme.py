@@ -403,6 +403,64 @@ def inject_custom_css() -> None:
             border-radius: 10px;
             padding: 10px 14px;
         }
+
+        /* Medallion ELT Pipeline Flow */
+        .og-elt-flow {
+            display: grid;
+            grid-template-columns: 1fr auto 1fr auto 1fr auto 1fr auto 1fr;
+            gap: 8px;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .og-elt-node {
+            background: rgba(17, 24, 39, 0.92);
+            border: 1px solid var(--border-subtle);
+            border-radius: 10px;
+            padding: 10px 12px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .og-elt-tag {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.65rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            margin-bottom: 3px;
+        }
+
+        .og-elt-name {
+            font-size: 0.84rem;
+            font-weight: 700;
+            color: #F8FAFC;
+            margin-bottom: 3px;
+        }
+
+        .og-elt-desc {
+            font-size: 0.72rem;
+            color: #94A3B8;
+            line-height: 1.35;
+        }
+
+        .og-elt-arrow {
+            color: #38BDF8;
+            font-size: 1.05rem;
+            font-weight: 700;
+            opacity: 0.75;
+        }
+
+        .og-math-box {
+            background: rgba(11, 17, 32, 0.88);
+            border: 1px solid rgba(56, 189, 248, 0.22);
+            border-radius: 10px;
+            padding: 10px 14px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.76rem;
+            color: #E2E8F0;
+            line-height: 1.6;
+        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -519,6 +577,53 @@ def render_kpi_strip(dispatch_results: dict[str, Any]) -> None:
                 <div class="og-kpi-label">Implied Abatement Cost</div>
                 <div class="og-kpi-value">€{abatement_cost:,.2f} / t</div>
                 <div class="og-kpi-delta {abatement_cls}">{abatement_delta}</div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_elt_pipeline_flow(
+    total_hours: int,
+    actual_hours: int,
+    forecast_hours: int,
+    alpha: float,
+    marginal_cycle_cost: float,
+    mae_value: float | None,
+) -> None:
+    mae_txt = f"{mae_value:.1f} gCO₂/kWh" if mae_value is not None else "n/a"
+    st.markdown(
+        f"""
+        <div class="og-elt-flow">
+            <div class="og-elt-node" style="border-top: 2px solid #38BDF8;">
+                <div class="og-elt-tag" style="color:#38BDF8;">1 · Extract</div>
+                <div class="og-elt-name">ENTSO-E & TenneT API</div>
+                <div class="og-elt-desc">Cloud Run (2nd Gen) pulls A44 prices, A75 actuals, A69/A65 forecasts & imbalance via PyArrow.</div>
+            </div>
+            <div class="og-elt-arrow">→</div>
+            <div class="og-elt-node" style="border-top: 2px solid #F59E0B;">
+                <div class="og-elt-tag" style="color:#F59E0B;">2 · Bronze</div>
+                <div class="og-elt-name">BigQuery Raw Landing</div>
+                <div class="og-elt-desc">6 append-only tables (<span class="og-mono">WRITE_APPEND</span>), partitioned by <span class="og-mono">DATE(timestamp_utc)</span> & clustered.</div>
+            </div>
+            <div class="og-elt-arrow">→</div>
+            <div class="og-elt-node" style="border-top: 2px solid #A78BFA;">
+                <div class="og-elt-tag" style="color:#A78BFA;">3 · Silver (dbt)</div>
+                <div class="og-elt-name">Dedup & Flow Tracing</div>
+                <div class="og-elt-desc">6 staging views + 2 int. models: <span class="og-mono">QUALIFY</span> dedup, 15m→1h energy rollup, 72h/168h baselines.</div>
+            </div>
+            <div class="og-elt-arrow">→</div>
+            <div class="og-elt-node" style="border-top: 2px solid #10B981;">
+                <div class="og-elt-tag" style="color:#10B981;">4 · Gold (dbt)</div>
+                <div class="og-elt-name">COALESCE Spliced Mart</div>
+                <div class="og-elt-desc"><b>{actual_hours}h</b> actuals + <b>{forecast_hours}h</b> forecasts ({total_hours}h total) · 7d CI MAE: <b>{mae_txt}</b>.</div>
+            </div>
+            <div class="og-elt-arrow">→</div>
+            <div class="og-elt-node" style="border-top: 2px solid #34D399;">
+                <div class="og-elt-tag" style="color:#34D399;">5 · Optimizer</div>
+                <div class="og-elt-name">HiGHS LP MPC Solver</div>
+                <div class="og-elt-desc">Solves {2 * total_hours} decision variables across horizon · α=<b>{alpha:.2f}</b> · Wear gate <b>€{marginal_cycle_cost:.3f}/kWh</b>.</div>
             </div>
         </div>
         """,
