@@ -3,12 +3,16 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import pandas as pd
-import plotly.graph_objects as go
 import streamlit as st
 from dotenv import load_dotenv
-from plotly.subplots import make_subplots
 
 from asset_config import render_asset_sidebar
+from charts import (
+    build_cost_comparison_chart,
+    build_dispatch_cockpit_chart,
+    build_forecast_accuracy_chart,
+    build_pareto_chart,
+)
 from data_fetcher import (
     load_asset_constraints,
     load_dispatch_schedule,
@@ -21,11 +25,13 @@ from optimizer import (
     compute_pareto_frontier,
     simulate_commercial_dispatch,
 )
+from ui_theme import inject_custom_css, render_header_bar, render_kpi_strip
 
 load_dotenv(override=True)
 
 st.set_page_config(
     page_title="OptiGrid: Commercial Asset Energy & Carbon Dispatch",
+    page_icon="⚡",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -97,8 +103,111 @@ def _build_modbus_json_payload(df_sched: pd.DataFrame, asset_id: str, zone_code:
     return json.dumps(payload, indent=2)
 
 
+def _render_cockpit_sidebar_panel(
+    df_sched: pd.DataFrame,
+    dispatch_results: dict,
+    marginal_cycle_cost: float,
+) -> None:
+    total_hrs = max(len(df_sched), 1)
+    counts = df_sched["dispatch_action"].value_counts().to_dict()
+    chg_n = int(counts.get("CHARGE_BATTERY", 0))
+    dis_n = int(counts.get("DISCHARGE_BATTERY", 0))
+    rmp_n = int(counts.get("RAMP_LOAD", 0))
+    cur_n = int(counts.get("CURTAIL_SOLAR", 0))
+    hld_n = int(counts.get("HOLD_BASELINE", 0))
+
+    pct = lambda n: 100.0 * n / total_hrs
+
+    st.markdown(
+        f"""
+        <div class="og-panel">
+            <div class="og-panel-title">
+                <span>Dispatch Mix ({total_hrs}h Horizon)</span>
+                <span class="og-mono" style="color:#38BDF8;">HiGHS LP</span>
+            </div>
+            <div class="og-action-bar">
+                <div style="width:{pct(chg_n):.1f}%; background:#10B981;"></div>
+                <div style="width:{pct(dis_n):.1f}%; background:#A78BFA;"></div>
+                <div style="width:{pct(rmp_n):.1f}%; background:#38BDF8;"></div>
+                <div style="width:{pct(cur_n):.1f}%; background:#F43F5E;"></div>
+                <div style="width:{pct(hld_n):.1f}%; background:#475569;"></div>
+            </div>
+            <div class="og-action-legend">
+                <div class="og-legend-item"><span><span class="og-swatch" style="background:#10B981;"></span>Charge</span><span class="og-mono">{chg_n}h</span></div>
+                <div class="og-legend-item"><span><span class="og-swatch" style="background:#A78BFA;"></span>Discharge</span><span class="og-mono">{dis_n}h</span></div>
+                <div class="og-legend-item"><span><span class="og-swatch" style="background:#38BDF8;"></span>Ramp Load</span><span class="og-mono">{rmp_n}h</span></div>
+                <div class="og-legend-item"><span><span class="og-swatch" style="background:#F43F5E;"></span>Curtail</span><span class="og-mono">{cur_n}h</span></div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    cheapest_row = df_sched.loc[df_sched["price_eur_kwh"].idxmin()]
+    cleanest_row = df_sched.loc[df_sched["carbon_intensity_gco2_kwh"].idxmin()]
+    peak_price_row = df_sched.loc[df_sched["price_eur_kwh"].idxmax()]
+    max_solar_row = df_sched.loc[df_sched["estimated_solar_kw"].idxmax()]
+
+    st.markdown(
+        f"""
+        <div class="og-panel">
+            <div class="og-panel-title"><span>Market Extremes & Opportunity</span></div>
+            <div class="og-stat-row">
+                <span class="og-stat-k">Cheapest Price Hour</span>
+                <span class="og-stat-v" style="color:#38BDF8;">{cheapest_row['local_datetime'].strftime('%d %b %H:%M')} · €{cheapest_row['price_eur_kwh']:.3f}</span>
+            </div>
+            <div class="og-stat-row">
+                <span class="og-stat-k">Cleanest Grid Hour</span>
+                <span class="og-stat-v" style="color:#34D399;">{cleanest_row['local_datetime'].strftime('%d %b %H:%M')} · {cleanest_row['carbon_intensity_gco2_kwh']:.0f} g</span>
+            </div>
+            <div class="og-stat-row">
+                <span class="og-stat-k">Peak Tariff Risk</span>
+                <span class="og-stat-v" style="color:#FB7185;">{peak_price_row['local_datetime'].strftime('%d %b %H:%M')} · €{peak_price_row['price_eur_kwh']:.3f}</span>
+            </div>
+            <div class="og-stat-row">
+                <span class="og-stat-k">Peak Solar PV Output</span>
+                <span class="og-stat-v" style="color:#FBBF24;">{max_solar_row['local_datetime'].strftime('%d %b %H:%M')} · {max_solar_row['estimated_solar_kw']:.0f} kW</span>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    baseline_eur = float(dispatch_results.get("total_baseline_cost_eur", 0.0))
+    opt_eur = float(dispatch_results.get("total_optimized_cost_eur", 0.0))
+    wear_eur = float(dispatch_results.get("total_degradation_cost_eur", 0.0))
+    base_co2 = float(dispatch_results.get("baseline_emissions_kg", 0.0))
+    opt_co2 = float(dispatch_results.get("optimized_emissions_kg", 0.0))
+
+    st.markdown(
+        f"""
+        <div class="og-panel">
+            <div class="og-panel-title"><span>MPC Solver & Wear Telemetry</span></div>
+            <div class="og-stat-row">
+                <span class="og-stat-k">Unmanaged Baseline Spend</span>
+                <span class="og-stat-v">€{baseline_eur:,.2f}</span>
+            </div>
+            <div class="og-stat-row">
+                <span class="og-stat-k">Optimized MPC Spend</span>
+                <span class="og-stat-v" style="color:#34D399;">€{opt_eur:,.2f}</span>
+            </div>
+            <div class="og-stat-row">
+                <span class="og-stat-k">Cell Wear Gate / Total Wear</span>
+                <span class="og-stat-v">€{marginal_cycle_cost:.3f}/kWh · €{wear_eur:.2f}</span>
+            </div>
+            <div class="og-stat-row">
+                <span class="og-stat-k">Scope 2 (Base → MPC)</span>
+                <span class="og-stat-v">{base_co2:,.0f} → {opt_co2:,.0f} kg</span>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def render_dashboard():
-    st.sidebar.title("OptiGrid Dispatch Console")
+    inject_custom_css()
+
     zone_label = st.sidebar.selectbox("Bidding Zone", list(BIDDING_ZONES.keys()))
     zone_code = BIDDING_ZONES[zone_label]
 
@@ -107,16 +216,19 @@ def render_dashboard():
     asset_id = asset_config.get("asset_id", "NL-AMS-DC01")
     default_alpha = float(asset_config.get("alpha_weight", 0.50))
 
-    st.sidebar.subheader("Optimization & Wear Cost")
-    pricing_mode = st.sidebar.radio(
+    st.sidebar.markdown("##### Objective & Degradation")
+    pricing_mode = st.sidebar.segmented_control(
         "Carbon Valuation Mode",
-        ["Pareto Weight (α)", "Internal Carbon Tax (€/tCO₂)"],
-        horizontal=False,
+        options=["Pareto Weight (α)", "Carbon Tax (€/t)"],
+        default="Pareto Weight (α)",
+        label_visibility="collapsed",
     )
+    if pricing_mode is None:
+        pricing_mode = "Pareto Weight (α)"
 
     if pricing_mode == "Pareto Weight (α)":
         alpha = st.sidebar.slider(
-            "Optimization Preference (Alpha)",
+            "Preference α  (0 = Green · 1 = Profit)",
             min_value=0.0,
             max_value=1.0,
             value=default_alpha,
@@ -125,7 +237,7 @@ def render_dashboard():
         )
         implied_shadow_eur = round((1.0 - alpha) / max(alpha, 0.05) * 65.0, 1)
         st.sidebar.caption(
-            f"Implied Shadow Carbon Price: **€{implied_shadow_eur:.1f} / tCO₂** (EU ETS ref: €65/t)"
+            f"Implied Carbon Shadow Price: **€{implied_shadow_eur:.1f} / tCO₂** (EU ETS €65/t)"
         )
         asset_config.pop("shadow_carbon_eur_tco2", None)
     else:
@@ -142,7 +254,7 @@ def render_dashboard():
         st.sidebar.caption(f"Equivalent Pareto Weight: **α = {alpha:.2f}**")
 
     marginal_cycle_cost = st.sidebar.slider(
-        "BESS Cell Degradation Cost (€/kWh Cycled)",
+        "BESS Wear Cost (€/kWh Cycled)",
         min_value=0.00,
         max_value=0.08,
         value=float(
@@ -151,11 +263,11 @@ def render_dashboard():
             )
         ),
         step=0.005,
-        help="Amortized LiFePO4 battery wear cost (typically 0.02–0.04 €/kWh cycled). Prevents unprofitable micro-cycling.",
+        help="Amortized LiFePO4 battery wear cost (typically 0.02–0.04 €/kWh cycled).",
     )
     asset_config["marginal_cycle_cost_eur_kwh"] = marginal_cycle_cost
 
-    with st.sidebar.expander("Custom 24h Load Profile (CSV / JSON)"):
+    with st.sidebar.expander("📈 Custom 24h Load Profile", expanded=False):
         uploaded_curve = st.file_uploader(
             "Upload 24h Load Curve (.csv / .json)",
             type=["csv", "json"],
@@ -166,9 +278,9 @@ def render_dashboard():
             parsed_map = _parse_custom_load_upload(uploaded_curve, base_kw_default)
             if parsed_map:
                 asset_config["custom_load_profile_kw"] = parsed_map
-                st.success(f"Applied custom 24h load profile ({len(parsed_map)} hours)")
+                st.success(f"Applied custom 24h profile ({len(parsed_map)}h)")
 
-        enable_interactive_curve = st.checkbox("Edit 24h Baseline Curve Interactively")
+        enable_interactive_curve = st.checkbox("Edit 24h Baseline Interactively")
         if enable_interactive_curve:
             default_curve_df = pd.DataFrame(
                 {
@@ -186,13 +298,24 @@ def render_dashboard():
             edited_curve_df = st.data_editor(
                 default_curve_df,
                 hide_index=True,
-                height=220,
+                height=190,
                 key="custom_24h_curve_editor",
             )
             asset_config["custom_load_profile_kw"] = {
                 int(r["hour"]) % 24: float(r["load_kw"])
                 for _, r in edited_curve_df.iterrows()
             }
+
+    st.sidebar.markdown(
+        """
+        <div class="og-side-footer">
+            <b>Engine:</b> SciPy HiGHS LP MPC<br/>
+            <b>Viewport Lock:</b> 1920 × 1080 px<br/>
+            <b>Data Cache:</b> BigQuery + RAM TTL
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
     today_iso = datetime.now(ZoneInfo("Europe/Amsterdam")).date().isoformat()
     df_metrics = load_gold_metrics(bidding_zone=zone_code, anchor_date_iso=today_iso)
@@ -213,39 +336,35 @@ def render_dashboard():
         use_lp=True,
     )
 
-    st.title("Commercial Facility Dispatch & Dynamic Energy Arbitrage")
     facility_name = asset_config.get("facility_name", "Commercial Facility")
     substation = asset_config.get("substation_area", "NL-RANDSTAD-NORTH")
-
-    sol_kwp = asset_config.get("solar_kwp", 0)
-    bess_kwh = asset_config.get("bess_capacity_kwh", 0)
-
-    mae_badge = ""
-    if df_accuracy is not None and not df_accuracy.empty and "rolling_7d_mae_gco2_kwh" in df_accuracy.columns:
-        latest_mae = float(df_accuracy.iloc[0]["rolling_7d_mae_gco2_kwh"])
-        mae_badge = f" | **7d Carbon Forecast MAE:** `{latest_mae:.1f} gCO₂/kWh`"
-
-    st.caption(
-        f"**Facility:** {facility_name} (`{asset_id}`) | **Bidding Zone:** {zone_label} | "
-        f"**Substation:** `{substation}` | **Solar:** {sol_kwp:.0f} kWp | "
-        f"**BESS:** {bess_kwh:.0f} kWh (Wear: €{marginal_cycle_cost:.3f}/kWh){mae_badge}"
-    )
-
-    is_cong = dispatch_results.get("is_congestion_active", False)
-    exp_factor = dispatch_results.get("export_factor", 1.0)
-
+    sol_kwp = float(asset_config.get("solar_kwp", 0.0))
+    bess_kwh = float(asset_config.get("bess_capacity_kwh", 0.0))
+    is_cong = bool(dispatch_results.get("is_congestion_active", False))
+    exp_factor = float(dispatch_results.get("export_factor", 1.0))
     tso_name = "TenneT" if "NL" in zone_code else ("PSE" if "PL" in zone_code else "Regional Grid")
-    if is_cong:
-        st.error(
-            f"⚠️ **{tso_name.upper()} CONGESTION ACTIVE ON SUBSTATION `{substation}`** | "
-            f"Export capacity de-rated to **{exp_factor * 100:.0f}%** of nominal limit. "
-            f"Automated BESS absorption & solar curtailment safeguards are active."
-        )
-    else:
-        st.success(
-            f"🟢 **{tso_name} Substation `{substation}`: Nominal Operating State** | "
-            f"Grid feed-in unrestricted (Export factor: 100%). Curtailment triggers armed."
-        )
+
+    mae_value = None
+    if (
+        df_accuracy is not None
+        and not df_accuracy.empty
+        and "rolling_7d_mae_gco2_kwh" in df_accuracy.columns
+    ):
+        mae_value = float(df_accuracy.iloc[0]["rolling_7d_mae_gco2_kwh"])
+
+    render_header_bar(
+        facility_name=facility_name,
+        asset_id=asset_id,
+        zone_label=zone_label,
+        substation=substation,
+        sol_kwp=sol_kwp,
+        bess_kwh=bess_kwh,
+        marginal_cycle_cost=marginal_cycle_cost,
+        is_congestion=is_cong,
+        export_factor=exp_factor,
+        tso_name=tso_name,
+        mae_value=mae_value,
+    )
 
     has_data = (
         dispatch_results
@@ -256,256 +375,274 @@ def render_dashboard():
         st.warning("Awaiting day-ahead market settlement telemetry. Re-evaluating schedule...")
         return
 
-    df_sched = dispatch_results["df_schedule"]
+    df_sched = dispatch_results["df_schedule"].copy()
+    if "is_forecasted" in source_df.columns:
+        fc_src = source_df[["timestamp_utc", "is_forecasted"]].copy()
+        fc_src["timestamp_utc"] = pd.to_datetime(fc_src["timestamp_utc"], utc=True)
+        df_sched["timestamp_utc"] = pd.to_datetime(df_sched["timestamp_utc"], utc=True)
+        df_sched = df_sched.merge(
+            fc_src.drop_duplicates(subset=["timestamp_utc"]),
+            on="timestamp_utc",
+            how="left",
+        )
+        df_sched["is_forecasted"] = df_sched["is_forecasted"].fillna(False).astype(bool)
 
-    st.markdown("### Executive KPI Comparison (OptiGrid MPC vs. Unmanaged Baseline)")
-    kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+    render_kpi_strip(dispatch_results)
 
-    opt_spend = dispatch_results["total_optimized_cost_eur"]
-    saved_eur = dispatch_results["net_financial_yield_eur"]
-    saved_pct = dispatch_results["cost_saving_pct"]
-    kpi1.metric(
-        "Net Energy Spend",
-        f"€{opt_spend:.2f}",
-        f"↓ €{saved_eur:.2f} saved ({-saved_pct:.1f}%)",
-        delta_color="normal",
+    tab_cockpit, tab_pareto, tab_forecast, tab_ledger = st.tabs(
+        [
+            "Cockpit",
+            "Pareto & Strategy",
+            "Forecast & Imbalance",
+            "Export",
+        ]
     )
 
-    opt_co2 = dispatch_results.get("optimized_emissions_kg", 0.0)
-    abated_co2 = dispatch_results["total_carbon_avoided_kg"]
-    carbon_pct = dispatch_results.get("carbon_saving_pct", 0.0)
-    kpi2.metric(
-        "Net Carbon Footprint",
-        f"{opt_co2:.1f} kgCO₂",
-        f"↓ {abated_co2:.1f} kgCO₂ abated ({-carbon_pct:.1f}%)",
-        delta_color="normal",
-    )
+    with tab_cockpit:
+        col_main, col_side = st.columns([2.35, 1.0], gap="medium")
 
-    rescued_kwh = dispatch_results.get(
-        "solar_curtailment_avoided_kwh", dispatch_results["curtailed_solar_kwh"]
-    )
-    kpi3.metric(
-        "Solar Curtailment Avoided",
-        f"{rescued_kwh:.1f} kWh",
-        f"{dispatch_results['bess_cycles']:.2f} eq. BESS cycles",
-        delta_color="normal",
-    )
-
-    abatement_cost = dispatch_results.get("implied_abatement_cost_eur_tco2", 0.0)
-    kpi4.metric(
-        "Implied Carbon Abatement Cost",
-        f"€{abatement_cost:.2f} / tCO₂",
-        "Net negative cost (profit + green)" if abatement_cost <= 0 else "vs €65/t EU ETS",
-        delta_color="normal" if abatement_cost <= 65.0 else "inverse",
-    )
-
-    col_main, col_pareto = st.columns([2.2, 1.0])
-
-    with col_main:
-        st.markdown("### Synchronized Grid Metrics & Commercial MPC Dispatch Schedule")
-        fig = make_subplots(
-            rows=2,
-            cols=1,
-            shared_xaxes=True,
-            vertical_spacing=0.10,
-            subplot_titles=(
-                "Day-Ahead Wholesale Price (€/kWh) & Flow-Traced Carbon Intensity (gCO₂/kWh)",
-                "HiGHS LP Battery State-of-Charge (SoC %) & Net Dispatch Import/Export (kW)",
-            ),
-            specs=[[{"secondary_y": True}], [{"secondary_y": True}]],
-        )
-
-        fig.add_trace(
-            go.Scatter(
-                x=df_sched["local_datetime"],
-                y=df_sched["price_eur_kwh"],
-                name="Electricity Price (€/kWh)",
-                line=dict(color="#2563EB", width=2.5),
-            ),
-            row=1,
-            col=1,
-            secondary_y=False,
-        )
-        fig.add_trace(
-            go.Scatter(
-                x=df_sched["local_datetime"],
-                y=df_sched["carbon_intensity_gco2_kwh"],
-                name="Consumption Carbon (gCO₂/kWh)",
-                line=dict(color="#DC2626", width=2.5, dash="dot"),
-            ),
-            row=1,
-            col=1,
-            secondary_y=True,
-        )
-
-        fig.add_trace(
-            go.Scatter(
-                x=df_sched["local_datetime"],
-                y=df_sched["bess_soc_pct"],
-                name="BESS SoC (%)",
-                line=dict(color="#8B5CF6", width=3),
-                fill="tozeroy",
-            ),
-            row=2,
-            col=1,
-            secondary_y=False,
-        )
-        fig.add_trace(
-            go.Bar(
-                x=df_sched["local_datetime"],
-                y=df_sched["net_grid_import_kw"],
-                name="Net Grid Import (+) / Export (-) (kW)",
-                marker_color="rgba(16, 185, 129, 0.45)",
-            ),
-            row=2,
-            col=1,
-            secondary_y=True,
-        )
-
-        for _, row in df_sched.iterrows():
-            act = row["dispatch_action"]
-            t_start = row["local_datetime"]
-            t_end = t_start + pd.Timedelta(hours=1)
-
-            if act == "CHARGE_BATTERY":
-                fig.add_vrect(
-                    x0=t_start,
-                    x1=t_end,
-                    fillcolor="rgba(16, 185, 129, 0.18)",
-                    layer="below",
-                    line_width=0,
-                    row=1,
-                    col=1,
+        with col_main:
+            ctrl1, ctrl2, ctrl3 = st.columns([1.6, 1.0, 1.0])
+            with ctrl1:
+                horizon_filter = st.segmented_control(
+                    "Horizon",
+                    options=["All Hours", "Actuals (Past)", "Forecast (Ahead)"],
+                    default="All Hours",
+                    label_visibility="collapsed",
                 )
-            elif act == "DISCHARGE_BATTERY":
-                fig.add_vrect(
-                    x0=t_start,
-                    x1=t_end,
-                    fillcolor="rgba(139, 92, 246, 0.18)",
-                    layer="below",
-                    line_width=0,
-                    row=1,
-                    col=1,
-                )
-            elif act == "CURTAIL_SOLAR":
-                fig.add_vrect(
-                    x0=t_start,
-                    x1=t_end,
-                    fillcolor="rgba(239, 68, 68, 0.22)",
-                    layer="below",
-                    line_width=0,
-                    row=1,
-                    col=1,
-                )
+            with ctrl2:
+                show_action_bands = st.toggle("Action Shading", value=True)
+            with ctrl3:
+                show_solar_overlay = st.toggle("Solar PV Overlay", value=True)
 
-        fig.update_layout(
-            height=640,
-            hovermode="x unified",
-            template="plotly_white",
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-        )
-        st.plotly_chart(fig, width="stretch")
+            df_plot = df_sched.copy()
+            if horizon_filter == "Actuals (Past)" and "is_forecasted" in df_plot.columns:
+                filtered = df_plot[df_plot["is_forecasted"] == False]
+                if not filtered.empty:
+                    df_plot = filtered
+            elif horizon_filter == "Forecast (Ahead)" and "is_forecasted" in df_plot.columns:
+                filtered = df_plot[df_plot["is_forecasted"] == True]
+                if not filtered.empty:
+                    df_plot = filtered
 
-    with col_pareto:
-        st.markdown("### Cost vs. Carbon Pareto Frontier")
+            fig_cockpit = build_dispatch_cockpit_chart(
+                df_sched=df_plot,
+                show_action_bands=show_action_bands,
+                show_solar_overlay=show_solar_overlay,
+                bess_min_soc_pct=float(asset_config.get("bess_min_soc_pct", 10.0)),
+                bess_max_soc_pct=float(asset_config.get("bess_max_soc_pct", 95.0)),
+                height=625,
+            )
+            st.plotly_chart(fig_cockpit, width="stretch", config={"displayModeBar": False})
+
+        with col_side:
+            _render_cockpit_sidebar_panel(
+                df_sched=df_sched,
+                dispatch_results=dispatch_results,
+                marginal_cycle_cost=marginal_cycle_cost,
+            )
+
+    with tab_pareto:
         df_pareto = compute_pareto_frontier(
             df_metrics=source_df,
             asset_config=asset_config,
             df_congestion=df_congestion,
             steps=11,
         )
-        if not df_pareto.empty:
-            fig_p = go.Figure()
-            fig_p.add_trace(
-                go.Scatter(
-                    x=df_pareto["total_cost_eur"],
-                    y=df_pareto["total_emissions_kg"],
-                    mode="lines+markers",
-                    name="Pareto Frontier (α ∈ [0, 1])",
-                    text=[f"α = {a:.1f}" for a in df_pareto["alpha"]],
-                    line=dict(color="#64748B", width=2.5),
-                    marker=dict(size=8, color="#3B82F6"),
-                )
+        p_col1, p_col2 = st.columns([1.25, 1.0], gap="medium")
+        with p_col1:
+            fig_pareto = build_pareto_chart(
+                df_pareto=df_pareto,
+                active_cost=dispatch_results["total_optimized_cost_eur"],
+                active_emissions=dispatch_results["optimized_emissions_kg"],
+                active_alpha=alpha,
+                height=640,
             )
-            fig_p.add_trace(
-                go.Scatter(
-                    x=[dispatch_results["total_optimized_cost_eur"]],
-                    y=[dispatch_results["optimized_emissions_kg"]],
-                    mode="markers",
-                    name=f"Active Operating Point (α={alpha:.2f})",
-                    marker=dict(
-                        size=16,
-                        color="#10B981",
-                        line=dict(width=3, color="#065F46"),
-                        symbol="diamond",
-                    ),
-                )
-            )
-            fig_p.update_layout(
-                height=420,
-                template="plotly_white",
-                xaxis_title="Total Net Energy Spend (€)",
-                yaxis_title="Total Scope 2 Footprint (kgCO₂)",
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
-                margin=dict(l=20, r=20, t=40, b=20),
-            )
-            st.plotly_chart(fig_p, width="stretch")
+            st.plotly_chart(fig_pareto, width="stretch", config={"displayModeBar": False})
 
-        st.info(
-            f"**MPC Solver Telemetry:** Global LP horizon solved across **{len(df_sched)} hours**. "
-            f"Degradation gate: **€{marginal_cycle_cost:.3f}/kWh** "
-            f"(Total cell wear cost: **€{dispatch_results.get('total_degradation_cost_eur', 0.0):.2f}**)."
+        with p_col2:
+            fig_cost = build_cost_comparison_chart(df_sched, height=345)
+            st.plotly_chart(fig_cost, width="stretch", config={"displayModeBar": False})
+
+            if not df_pareto.empty:
+                st.markdown("##### Strategy Tradeoff Matrix")
+                key_alphas = [0.0, 0.5, 1.0]
+                summary_rows = []
+                for a_target in key_alphas:
+                    row_match = df_pareto.iloc[(df_pareto["alpha"] - a_target).abs().argsort()[:1]].iloc[0]
+                    label = (
+                        "Max Green (α=0.0)"
+                        if a_target == 0.0
+                        else ("Balanced (α=0.5)" if a_target == 0.5 else "Max Profit (α=1.0)")
+                    )
+                    summary_rows.append(
+                        {
+                            "Strategy": label,
+                            "Net Spend (€)": round(float(row_match["total_cost_eur"]), 2),
+                            "Savings (€)": round(float(row_match["net_savings_eur"]), 2),
+                            "Scope 2 (kg)": round(float(row_match["total_emissions_kg"]), 1),
+                            "Abated (kg)": round(float(row_match["carbon_avoided_kg"]), 1),
+                        }
+                    )
+                summary_rows.append(
+                    {
+                        "Strategy": f"Active (α={alpha:.2f})",
+                        "Net Spend (€)": round(float(dispatch_results["total_optimized_cost_eur"]), 2),
+                        "Savings (€)": round(float(dispatch_results["net_financial_yield_eur"]), 2),
+                        "Scope 2 (kg)": round(float(dispatch_results["optimized_emissions_kg"]), 1),
+                        "Abated (kg)": round(float(dispatch_results["total_carbon_avoided_kg"]), 1),
+                    }
+                )
+                st.dataframe(
+                    pd.DataFrame(summary_rows),
+                    hide_index=True,
+                    width="stretch",
+                    height=180,
+                )
+
+    with tab_forecast:
+        f_col1, f_col2 = st.columns([2.1, 1.0], gap="medium")
+        with f_col1:
+            fig_fc = build_forecast_accuracy_chart(
+                df_accuracy=df_accuracy,
+                df_metrics=source_df,
+                height=640,
+            )
+            st.plotly_chart(fig_fc, width="stretch", config={"displayModeBar": False})
+
+        with f_col2:
+            latest_mae = (
+                float(df_accuracy.iloc[0]["rolling_7d_mae_gco2_kwh"])
+                if not df_accuracy.empty and "rolling_7d_mae_gco2_kwh" in df_accuracy.columns
+                else 0.0
+            )
+            latest_rmse = (
+                float(df_accuracy.iloc[0]["rolling_7d_rmse_gco2_kwh"])
+                if not df_accuracy.empty and "rolling_7d_rmse_gco2_kwh" in df_accuracy.columns
+                else 0.0
+            )
+            cong_sev = (
+                str(df_congestion.iloc[0].get("congestion_severity", "NONE"))
+                if df_congestion is not None and not df_congestion.empty
+                else "NONE"
+            )
+            cong_msg = (
+                str(df_congestion.iloc[0].get("message_details", "Nominal grid operating status"))
+                if df_congestion is not None and not df_congestion.empty
+                else "Nominal grid operating status"
+            )
+
+            st.markdown(
+                f"""
+                <div class="og-panel">
+                    <div class="og-panel-title"><span>Carbon Model Telemetry (7d Rolling)</span></div>
+                    <div class="og-stat-row">
+                        <span class="og-stat-k">7d Rolling MAE</span>
+                        <span class="og-stat-v" style="color:#38BDF8;">{latest_mae:.2f} gCO₂/kWh</span>
+                    </div>
+                    <div class="og-stat-row">
+                        <span class="og-stat-k">7d Rolling RMSE</span>
+                        <span class="og-stat-v" style="color:#A78BFA;">{latest_rmse:.2f} gCO₂/kWh</span>
+                    </div>
+                    <div class="og-stat-row">
+                        <span class="og-stat-k">Substation Severity</span>
+                        <span class="og-stat-v">{cong_sev}</span>
+                    </div>
+                    <div style="margin-top:8px; font-size:0.78rem; color:#94A3B8; line-height:1.45;">
+                        {cong_msg}
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+            if not df_accuracy.empty and "error_gco2_kwh" in df_accuracy.columns:
+                st.markdown("##### Recent Backtest Residuals")
+                acc_disp = df_accuracy[
+                    ["local_datetime", "forecast_ci_gco2_kwh", "actual_ci_gco2_kwh", "error_gco2_kwh"]
+                ].head(12).copy()
+                acc_disp["local_datetime"] = pd.to_datetime(acc_disp["local_datetime"]).dt.strftime("%m-%d %H:%M")
+                acc_disp.columns = ["Time", "Forecast", "Actual", "Error"]
+                st.dataframe(acc_disp, hide_index=True, width="stretch", height=365)
+
+    with tab_ledger:
+        action_options = ["ALL"] + sorted(df_sched["dispatch_action"].unique().tolist())
+        selected_actions = st.pills(
+            "Filter by Dispatch Action",
+            options=action_options,
+            default="ALL",
+            selection_mode="single",
         )
 
-    st.markdown("### Actionable Hourly Dispatch Ledger")
-    display_cols = [
-        "local_datetime",
-        "price_eur_kwh",
-        "carbon_intensity_gco2_kwh",
-        "estimated_solar_kw",
-        "bess_power_kw",
-        "bess_soc_pct",
-        "curtailed_solar_kw",
-        "dispatch_action",
-        "cost_saving_eur",
-    ]
+        filtered_sched = df_sched if selected_actions in (None, "ALL") else df_sched[df_sched["dispatch_action"] == selected_actions]
 
-    ledger_df = df_sched[display_cols].copy()
-    ledger_df["local_datetime"] = ledger_df["local_datetime"].dt.strftime("%Y-%m-%d %H:%M")
-    ledger_df.columns = [
-        "Time (Local)",
-        "Price (€/kWh)",
-        "Carbon (g/kWh)",
-        "Solar Gen (kW)",
-        "BESS Power (kW)",
-        "BESS SoC (%)",
-        "Curtailed (kW)",
-        "Action Flag",
-        "Cost Delta (€)",
-    ]
+        display_cols = [
+            "local_datetime",
+            "price_eur_kwh",
+            "carbon_intensity_gco2_kwh",
+            "estimated_solar_kw",
+            "bess_power_kw",
+            "bess_soc_pct",
+            "curtailed_solar_kw",
+            "dispatch_action",
+            "cost_saving_eur",
+        ]
+        ledger_df = filtered_sched[display_cols].copy()
+        ledger_df["local_datetime"] = ledger_df["local_datetime"].dt.strftime("%Y-%m-%d %H:%M")
+        ledger_df.columns = [
+            "Time (Local)",
+            "Price (€/kWh)",
+            "Carbon (g/kWh)",
+            "Solar Gen (kW)",
+            "BESS Power (kW)",
+            "BESS SoC (%)",
+            "Curtailed (kW)",
+            "Action Flag",
+            "Cost Delta (€)",
+        ]
 
-    st.dataframe(ledger_df, width="stretch", height=360)
+        st.dataframe(
+            ledger_df,
+            hide_index=True,
+            width="stretch",
+            height=485,
+            column_config={
+                "Price (€/kWh)": st.column_config.NumberColumn(format="€%.4f"),
+                "Carbon (g/kWh)": st.column_config.NumberColumn(format="%.1f g"),
+                "Solar Gen (kW)": st.column_config.NumberColumn(format="%.1f kW"),
+                "BESS Power (kW)": st.column_config.NumberColumn(format="%+.1f kW"),
+                "BESS SoC (%)": st.column_config.ProgressColumn(
+                    min_value=0,
+                    max_value=100,
+                    format="%.1f%%",
+                ),
+                "Curtailed (kW)": st.column_config.NumberColumn(format="%.1f kW"),
+                "Cost Delta (€)": st.column_config.NumberColumn(format="€%+.2f"),
+            },
+        )
 
-    st.markdown("### Export Machine-Actionable Dispatch Schedule (BMS / Modbus / ESG Audit)")
-    exp_col1, exp_col2 = st.columns(2)
+        exp_col1, exp_col2, exp_col3 = st.columns([1.2, 1.2, 0.8])
+        modbus_json_str = _build_modbus_json_payload(df_sched, asset_id, zone_code)
+        exp_col1.download_button(
+            label="⬇️ Download JSON / Modbus Register Payload",
+            data=modbus_json_str,
+            file_name=f"optigrid_modbus_schedule_{asset_id}_{today_iso}.json",
+            mime="application/json",
+            use_container_width=True,
+        )
 
-    modbus_json_str = _build_modbus_json_payload(df_sched, asset_id, zone_code)
-    exp_col1.download_button(
-        label="⬇️ Download JSON / Modbus Register Payload (PLC / Edge BMS)",
-        data=modbus_json_str,
-        file_name=f"optigrid_modbus_schedule_{asset_id}_{today_iso}.json",
-        mime="application/json",
-        use_container_width=True,
-    )
+        csv_ledger_str = ledger_df.to_csv(index=False)
+        exp_col2.download_button(
+            label="⬇️ Download CSV Financial & ESG Audit Ledger",
+            data=csv_ledger_str,
+            file_name=f"optigrid_esg_audit_ledger_{asset_id}_{today_iso}.csv",
+            mime="text/csv",
+            use_container_width=True,
+        )
 
-    csv_ledger_str = ledger_df.to_csv(index=False)
-    exp_col2.download_button(
-        label="⬇️ Download CSV Financial & ESG Scope 2 Audit Ledger",
-        data=csv_ledger_str,
-        file_name=f"optigrid_esg_audit_ledger_{asset_id}_{today_iso}.csv",
-        mime="text/csv",
-        use_container_width=True,
-    )
+        with exp_col3:
+            with st.popover("👁️ Preview Modbus JSON", use_container_width=True):
+                st.code(modbus_json_str[:1800], language="json")
 
 
 if __name__ == "__main__":

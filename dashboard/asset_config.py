@@ -136,8 +136,6 @@ def get_default_assets_dataframe(bidding_zone: str = None) -> pd.DataFrame:
 def render_asset_sidebar(df_assets: pd.DataFrame, bidding_zone: str) -> dict[str, Any]:
     import streamlit as st
 
-    st.sidebar.header("Commercial Facility Profile")
-
     zone_assets = df_assets[df_assets["bidding_zone"] == bidding_zone].reset_index(drop=True)
     if zone_assets.empty:
         zone_assets = df_assets.reset_index(drop=True)
@@ -147,12 +145,21 @@ def render_asset_sidebar(df_assets: pd.DataFrame, bidding_zone: str) -> dict[str
         for _, row in zone_assets.iterrows()
     }
 
-    selected_label = st.sidebar.selectbox("Select Asset", list(asset_options.keys()))
+    selected_label = st.sidebar.selectbox("Commercial Asset", list(asset_options.keys()))
     selected_asset_id = asset_options[selected_label]
     asset_data = zone_assets[zone_assets["asset_id"] == selected_asset_id].iloc[0].to_dict()
 
-    if hasattr(st.sidebar, "caption") and hasattr(st.sidebar, "columns"):
-        st.sidebar.caption("One-Click Facility Archetype Presets")
+    if hasattr(st.sidebar, "pills"):
+        selected_preset = st.sidebar.pills(
+            "Archetype Preset",
+            options=list(FACILITY_ARCHETYPE_PRESETS.keys()),
+            selection_mode="single",
+            key=f"archetype_pills_{selected_asset_id}",
+        )
+        if selected_preset in FACILITY_ARCHETYPE_PRESETS:
+            asset_data.update(FACILITY_ARCHETYPE_PRESETS[selected_preset])
+    elif hasattr(st.sidebar, "caption") and hasattr(st.sidebar, "columns"):
+        st.sidebar.caption("Facility Archetype Presets")
         p_cols = st.sidebar.columns(3)
         if isinstance(p_cols, (list, tuple)) and len(p_cols) == 3:
             for col, (preset_key, preset_vals) in zip(
@@ -167,66 +174,66 @@ def render_asset_sidebar(df_assets: pd.DataFrame, bidding_zone: str) -> dict[str
             if active_preset in FACILITY_ARCHETYPE_PRESETS:
                 asset_data.update(FACILITY_ARCHETYPE_PRESETS[active_preset])
 
-    st.sidebar.subheader("Asset Physical Constraints")
-    with st.sidebar.form(key=f"asset_constraints_form_{selected_asset_id}"):
-        solar_kwp = st.number_input(
-            "Solar PV Peak (kWp)",
-            min_value=0.0,
-            max_value=20000.0,
-            value=float(asset_data.get("solar_kwp", 1000.0)),
-            step=50.0,
-        )
-        grid_export_limit_kw = st.number_input(
-            "Grid Export Limit (kW)",
-            min_value=0.0,
-            max_value=10000.0,
-            value=float(asset_data.get("grid_export_limit_kw", 500.0)),
-            step=50.0,
-        )
-        bess_capacity_kwh = st.number_input(
-            "BESS Capacity (kWh)",
-            min_value=0.0,
-            max_value=50000.0,
-            value=float(asset_data.get("bess_capacity_kwh", 2000.0)),
-            step=100.0,
-        )
-        bess_max_charge_kw = st.number_input(
-            "BESS Max Charge Rate (kW)",
-            min_value=0.0,
-            max_value=10000.0,
-            value=float(asset_data.get("bess_max_charge_kw", 500.0)),
-            step=50.0,
-        )
-        bess_max_discharge_kw = st.number_input(
-            "BESS Max Discharge Rate (kW)",
-            min_value=0.0,
-            max_value=10000.0,
-            value=float(asset_data.get("bess_max_discharge_kw", 500.0)),
-            step=50.0,
-        )
-        baseline_load_kw = st.number_input(
-            "Baseline Unshiftable Load (kW)",
-            min_value=0.0,
-            max_value=10000.0,
-            value=float(asset_data.get("baseline_load_kw", 300.0)),
-            step=25.0,
-        )
-        max_flexible_load_kw = st.number_input(
-            "Max Flexible / Shiftable Load (kW)",
-            min_value=0.0,
-            max_value=10000.0,
-            value=float(asset_data.get("max_flexible_load_kw", 400.0)),
-            step=25.0,
-        )
-        bess_roundtrip_efficiency = st.slider(
-            "BESS Roundtrip Efficiency",
-            min_value=0.70,
-            max_value=0.98,
-            value=float(asset_data.get("bess_roundtrip_efficiency", 0.90)),
-            step=0.01,
-        )
+    with st.sidebar.expander("⚙️ Asset Hardware Constraints", expanded=False):
+        with st.form(key=f"asset_constraints_form_{selected_asset_id}"):
+            solar_kwp = st.number_input(
+                "Solar PV Peak (kWp)",
+                min_value=0.0,
+                max_value=20000.0,
+                value=float(asset_data.get("solar_kwp", 1000.0)),
+                step=50.0,
+            )
+            grid_export_limit_kw = st.number_input(
+                "Grid Export Limit (kW)",
+                min_value=0.0,
+                max_value=10000.0,
+                value=float(asset_data.get("grid_export_limit_kw", 500.0)),
+                step=50.0,
+            )
+            bess_capacity_kwh = st.number_input(
+                "BESS Capacity (kWh)",
+                min_value=0.0,
+                max_value=50000.0,
+                value=float(asset_data.get("bess_capacity_kwh", 2000.0)),
+                step=100.0,
+            )
+            bess_max_charge_kw = st.number_input(
+                "BESS Max Charge Rate (kW)",
+                min_value=0.0,
+                max_value=10000.0,
+                value=float(asset_data.get("bess_max_charge_kw", 500.0)),
+                step=50.0,
+            )
+            bess_max_discharge_kw = st.number_input(
+                "BESS Max Discharge Rate (kW)",
+                min_value=0.0,
+                max_value=10000.0,
+                value=float(asset_data.get("bess_max_discharge_kw", 500.0)),
+                step=50.0,
+            )
+            baseline_load_kw = st.number_input(
+                "Baseline Unshiftable Load (kW)",
+                min_value=0.0,
+                max_value=10000.0,
+                value=float(asset_data.get("baseline_load_kw", 300.0)),
+                step=25.0,
+            )
+            max_flexible_load_kw = st.number_input(
+                "Max Flexible / Shiftable Load (kW)",
+                min_value=0.0,
+                max_value=10000.0,
+                value=float(asset_data.get("max_flexible_load_kw", 400.0)),
+                step=25.0,
+            )
+            bess_roundtrip_efficiency = st.slider(
+                "BESS Roundtrip Efficiency",
+                min_value=0.70,
+                max_value=0.98,
+                value=float(asset_data.get("bess_roundtrip_efficiency", 0.90)),
+                step=0.01,
+            )
 
-        submitted = st.form_submit_button("Save Constraints to BigQuery")
+            submitted = st.form_submit_button("Save Constraints to BigQuery", use_container_width=True)
 
     updated_config = dict(asset_data)
     updated_config.update(
